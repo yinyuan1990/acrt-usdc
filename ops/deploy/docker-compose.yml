@@ -1,5 +1,5 @@
 # /opt/arclaunch/docker-compose.yml — isolated from the existing solanft stack.
-# indexer / db / keeper services will be added once contracts are on testnet.
+# Secrets come from /opt/arclaunch/.env (PRIVATE_KEY, POSTGRES_PASSWORD); never committed.
 name: arclaunch
 
 services:
@@ -16,3 +16,53 @@ services:
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
+
+  db:
+    image: postgres:16-alpine
+    container_name: arclaunch-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: arclaunch
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-arclaunch}
+      POSTGRES_DB: arclaunch
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arclaunch -d arclaunch"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  indexer:
+    build:
+      context: ./indexer
+    image: arclaunch/indexer:latest
+    container_name: arclaunch-indexer
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3101:3101"
+    environment:
+      NODE_ENV: production
+      PORT: "3101"
+      RPC_URL: ${ARC_RPC_URL:-https://rpc.testnet.arc.io}
+      DATABASE_URL: postgres://arclaunch:${POSTGRES_PASSWORD:-arclaunch}@db:5432/arclaunch
+      DEPLOYMENTS_FILE: /app/deployments.json
+      KEEPER_ENABLED: "true"
+      KEEPER_PRIVATE_KEY: ${PRIVATE_KEY}
+      KEEPER_INTERVAL_MS: "60000"
+      KEEPER_FEE_THRESHOLD: "50000"
+      KEEPER_MAX_AGE_MS: "1800000"
+    volumes:
+      - ./contracts/deployments/arc-testnet.json:/app/deployments.json:ro
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  pgdata:
