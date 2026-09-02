@@ -4,7 +4,9 @@
 set -e
 DOMAIN=${DOMAIN:-launch.hzmrbq.com}
 IP=$(curl -s https://api.ipify.org || hostname -I | awk '{print $1}')
-RESOLVED=$(getent hosts "$DOMAIN" | awk '{print $1}' | head -1)
+# Ask the authoritative NS directly; local resolver caches may lag for minutes.
+NS=$(dig +short NS "${DOMAIN#*.}" | head -1)
+RESOLVED=$(dig +short A "$DOMAIN" @"${NS:-8.8.8.8}" | grep -E '^[0-9.]+$' | head -1)
 echo "server ip: $IP · $DOMAIN resolves to: ${RESOLVED:-<none>}"
 if [ "$RESOLVED" != "$IP" ]; then
   echo "DNS not pointing here yet; add A record and retry."; exit 1
