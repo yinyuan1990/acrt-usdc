@@ -200,6 +200,53 @@ const dict = {
   "me.pnl": ["盈亏", "PnL"],
   "me.empty": ["还没有持仓，去发现页看看", "No holdings yet. Explore tokens"],
 
+  // activity strip
+  "activity.bought": ["买入", "bought"],
+  "activity.sold": ["卖出", "sold"],
+  "activity.launched": ["发射了", "launched"],
+  "activity.of": ["的", "of"],
+
+  // explore extras
+  "explore.sort": ["排序", "Sort"],
+  "explore.sort.volume": ["成交额", "Volume"],
+  "explore.sort.mcap": ["市值", "Market cap"],
+  "explore.sort.created": ["创建时间", "Created"],
+  "explore.sort.progress": ["毕业进度", "Graduation"],
+  "explore.view.grid": ["卡片", "Grid"],
+  "explore.view.pulse": ["Pulse", "Pulse"],
+  "explore.pulse.new": ["新发射", "New pairs"],
+  "explore.pulse.graduating": ["冲刺中", "About to graduate"],
+  "explore.pulse.graduated": ["已毕业", "Graduated"],
+
+  // token extras
+  "token.thread": ["讨论", "Thread"],
+  "token.postReply": ["发表评论", "Post a reply"],
+  "token.replyPlaceholder": ["说点什么…", "Say something…"],
+  "token.creatorTag": ["创作者", "creator"],
+  "token.share": ["分享", "Share"],
+  "token.watch": ["收藏", "Watch"],
+  "token.explorer": ["浏览器", "Explorer"],
+  "token.graduationExplain": [
+    "当池内 USDC 达到阈值即毕业。LP 永久锁定，毕业后不迁移、不改手续费，创作者分润持续。",
+    "Graduates once USDC in the pool reaches the threshold. LP stays locked; nothing migrates, fees and creator share are unchanged after graduation.",
+  ],
+  "token.review": ["确认交易", "Review trade"],
+  "token.confirm": ["确认", "Confirm"],
+  "token.settings": ["交易设置", "Trade settings"],
+  "token.slippageHint": ["价格波动超过该比例时交易将回滚", "Reverts if price moves more than this"],
+  "token.impactHigh": ["价格影响较高，请确认", "High price impact, please confirm"],
+  "token.rate": ["汇率", "Rate"],
+
+  // search
+  "search.placeholder": ["搜索代币名称、符号或合约地址…", "Search by name, symbol or address…"],
+  "search.tokens": ["代币", "Tokens"],
+  "search.empty": ["没有匹配结果", "No results"],
+  "search.hint": ["按 ⌘K / Ctrl+K 打开", "Press ⌘K / Ctrl+K"],
+
+  // me extras
+  "me.created": ["我创建的", "Created"],
+  "me.held": ["我持有的", "Held"],
+
   // theme
   "theme.arc": ["Arc Blue", "Arc Blue"],
   "theme.terminal": ["Terminal", "Terminal"],

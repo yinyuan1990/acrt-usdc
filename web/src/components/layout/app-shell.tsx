@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, Compass, Flame, Languages, Palette, Plus, Rocket, Search, Trophy, User, Wallet, Zap } from "lucide-react";
+import { BookOpen, Compass, Flame, Languages, Palette, Plus, Rocket, Trophy, User, Wallet, Zap } from "lucide-react";
 import { useApp } from "@/components/providers";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SearchCommand } from "@/components/layout/search-command";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Ticker } from "@/components/layout/ticker";
@@ -77,11 +77,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="lg:hidden">
                 <Logo compact />
               </div>
-              <div className="relative hidden flex-1 md:block">
-                <Search size={16} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground" />
-                <Input placeholder={t("common.search")} className="h-9 max-w-xl pl-9" />
+              <div className="hidden flex-1 md:block">
+                <SearchCommand className="h-9 w-full max-w-xl justify-start" />
               </div>
               <div className="ml-auto flex items-center gap-2">
+                <SearchCommand className="size-9 px-0 md:hidden [&>span]:hidden" />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" className="h-9">

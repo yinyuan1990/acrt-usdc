@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ExternalLink, Globe, Lock, Send, X } from "lucide-react";
+import { Copy, ExternalLink, Globe, Lock, Send, Share2, Star, X } from "lucide-react";
+import { toast } from "sonner";
+import { Thread } from "@/components/token/thread";
 import { GRADUATION_THRESHOLD, PLATFORM, SUPPLY, candlesFor, getToken, holdersFor, tradesFor, type Token } from "@/lib/mock";
 import { fmtNum, fmtUsd, shortAddr } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -72,6 +74,38 @@ export default function TokenPage() {
                 </div>
               </div>
 
+              {/* Header actions (copy CA / share / watch / explorer) */}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(token.address).catch(() => {});
+                    toast.success(t("common.copied"), { description: token.address });
+                  }}
+                >
+                  <Copy /> CA
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(window.location.href).catch(() => {});
+                    toast.success(t("common.copied"));
+                  }}
+                >
+                  <Share2 /> {t("token.share")}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => toast(t("token.watch"), { description: `$${token.symbol}` })}>
+                  <Star /> {t("token.watch")}
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <a href={`https://testnet.arcscan.app/address/${token.address}`} target="_blank" rel="noreferrer">
+                    <ExternalLink /> {t("token.explorer")}
+                  </a>
+                </Button>
+              </div>
+
               <div className="mt-4 grid grid-cols-2 gap-3 border-t pt-4 text-xs sm:grid-cols-4">
                 <Kv label={t("common.mcap")} value={fmtUsd(mcap, { compact: true })} />
                 <Kv label={t("common.volume24h")} value={fmtUsd(token.volume24h, { compact: true })} />
@@ -100,14 +134,19 @@ export default function TokenPage() {
 
           {/* Tabs */}
           <Card className="gap-0 py-0">
-            <Tabs defaultValue="trades">
+            <Tabs defaultValue="thread">
               <div className="border-b p-2">
                 <TabsList>
+                  <TabsTrigger value="thread">{t("token.thread")}</TabsTrigger>
                   <TabsTrigger value="trades">{t("token.trades")}</TabsTrigger>
                   <TabsTrigger value="holders">{t("token.holders")}</TabsTrigger>
                   <TabsTrigger value="info">{t("token.info")}</TabsTrigger>
                 </TabsList>
               </div>
+
+              <TabsContent value="thread">
+                <Thread token={token} />
+              </TabsContent>
 
               <TabsContent value="trades">
                 <Table>
@@ -282,6 +321,7 @@ function GraduationCard({ progress, token }: { progress: number; token: Token })
           </div>
           <div className="mt-2 text-muted-foreground">{t("creator.forever")}</div>
         </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">{t("token.graduationExplain")}</p>
         <Button variant="link" size="sm" className="mt-2 w-full" asChild>
           <Link href="/create">{t("create.title")} →</Link>
         </Button>

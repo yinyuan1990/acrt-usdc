@@ -2,38 +2,54 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Crown, Flame } from "lucide-react";
-import { GRADUATION_THRESHOLD, PLATFORM_STATS, TOKENS } from "@/lib/mock";
+import { ArrowRight, ArrowUpDown, Crown, Flame, LayoutGrid, Rows3 } from "lucide-react";
+import { GRADUATION_THRESHOLD, PLATFORM_STATS, SUPPLY, TOKENS } from "@/lib/mock";
 import { fmtNum, fmtUsd } from "@/lib/format";
 import { useApp } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PctChange, SectionTitle, Stat, TokenAvatar } from "@/components/shared";
 import { TokenCard } from "@/components/token/token-card";
+import { PulseView } from "@/components/token/pulse-view";
 
 type Filter = "trending" | "new" | "graduating" | "graduated";
+type Sort = "volume" | "mcap" | "created" | "progress";
+type View = "grid" | "pulse";
 
 export default function ExplorePage() {
   const { t } = useApp();
   const [filter, setFilter] = useState<Filter>("trending");
+  const [sort, setSort] = useState<Sort>("volume");
+  const [view, setView] = useState<View>("grid");
 
   const king = useMemo(() => [...TOKENS].filter((x) => !x.graduated).sort((a, b) => b.pairedUsdc - a.pairedUsdc)[0], []);
 
   const list = useMemo(() => {
-    const xs = [...TOKENS];
-    switch (filter) {
-      case "new":
+    let xs = [...TOKENS];
+    if (filter === "graduating") xs = xs.filter((x) => !x.graduated);
+    if (filter === "graduated") xs = xs.filter((x) => x.graduated);
+    const effective: Sort = filter === "new" ? "created" : filter === "graduating" ? "progress" : sort;
+    switch (effective) {
+      case "created":
         return xs.sort((a, b) => b.createdAt - a.createdAt);
-      case "graduating":
-        return xs.filter((x) => !x.graduated).sort((a, b) => b.pairedUsdc - a.pairedUsdc);
-      case "graduated":
-        return xs.filter((x) => x.graduated).sort((a, b) => b.volume24h - a.volume24h);
+      case "mcap":
+        return xs.sort((a, b) => b.price * SUPPLY - a.price * SUPPLY);
+      case "progress":
+        return xs.sort((a, b) => b.pairedUsdc - a.pairedUsdc);
       default:
         return xs.sort((a, b) => b.volume24h - a.volume24h);
     }
-  }, [filter]);
+  }, [filter, sort]);
+
+  const sortLabel: Record<Sort, string> = {
+    volume: t("explore.sort.volume"),
+    mcap: t("explore.sort.mcap"),
+    created: t("explore.sort.created"),
+    progress: t("explore.sort.progress"),
+  };
 
   const kingProgress = (king.pairedUsdc / GRADUATION_THRESHOLD) * 100;
 
@@ -112,23 +128,57 @@ export default function ExplorePage() {
       <section>
         <SectionTitle
           right={
-            <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)}>
-              <TabsList>
-                <TabsTrigger value="trending">{t("common.trending")}</TabsTrigger>
-                <TabsTrigger value="new">{t("common.new")}</TabsTrigger>
-                <TabsTrigger value="graduating">{t("common.graduating")}</TabsTrigger>
-                <TabsTrigger value="graduated">{t("common.graduated")}</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div className="flex flex-wrap items-center gap-2">
+              {view === "grid" && (
+                <>
+                  <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)}>
+                    <TabsList>
+                      <TabsTrigger value="trending">{t("common.trending")}</TabsTrigger>
+                      <TabsTrigger value="new">{t("common.new")}</TabsTrigger>
+                      <TabsTrigger value="graduating">{t("common.graduating")}</TabsTrigger>
+                      <TabsTrigger value="graduated">{t("common.graduated")}</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <ArrowUpDown /> {t("explore.sort")}: {sortLabel[sort]}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {(Object.keys(sortLabel) as Sort[]).map((k) => (
+                        <DropdownMenuItem key={k} onClick={() => setSort(k)}>
+                          {sortLabel[k]}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
+              )}
+              <Tabs value={view} onValueChange={(v) => setView(v as View)}>
+                <TabsList>
+                  <TabsTrigger value="grid" title={t("explore.view.grid")}>
+                    <LayoutGrid />
+                  </TabsTrigger>
+                  <TabsTrigger value="pulse" title={t("explore.view.pulse")}>
+                    <Rows3 /> <span className="hidden sm:inline">Pulse</span>
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
           }
         >
           {t("common.token")}
         </SectionTitle>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {list.map((tok) => (
-            <TokenCard key={tok.address} token={tok} />
-          ))}
-        </div>
+        {view === "grid" ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {list.map((tok) => (
+              <TokenCard key={tok.address} token={tok} />
+            ))}
+          </div>
+        ) : (
+          <PulseView tokens={TOKENS} />
+        )}
       </section>
     </div>
   );

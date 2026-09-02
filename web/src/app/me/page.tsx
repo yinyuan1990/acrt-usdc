@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { Wallet } from "lucide-react";
-import { HOLDINGS, TOKENS, tradesFor } from "@/lib/mock";
+import { HOLDINGS, MY_TOKENS, PLATFORM, TOKENS, tradesFor } from "@/lib/mock";
 import { fmtNum, fmtUsd, shortAddr } from "@/lib/format";
 import { useApp } from "@/components/providers";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Empty, PctChange, SectionTitle, Stat, TimeAgo, TokenAvatar } from "@/components/shared";
 
 export default function MePage() {
@@ -48,35 +50,75 @@ export default function MePage() {
       </section>
 
       <section>
-        <SectionTitle>{t("me.holdings")}</SectionTitle>
-        {HOLDINGS.length === 0 ? (
-          <Empty>{t("me.empty")}</Empty>
-        ) : (
-          <Card className="gap-0 py-0">
-            <div className="divide-y">
-              {HOLDINGS.map((h) => {
-                const v = h.tokens * h.token.price;
-                const p = ((h.token.price - h.avgCost) / h.avgCost) * 100;
-                return (
-                  <Link key={h.token.address} href={`/token/${h.token.address}`} className="flex items-center gap-3 p-3 hover:bg-accent">
-                    <TokenAvatar emoji={h.token.emoji} hue={h.token.hue} size={36} />
+        <Tabs defaultValue="held">
+          <SectionTitle
+            right={
+              <TabsList>
+                <TabsTrigger value="held">{t("me.held")}</TabsTrigger>
+                <TabsTrigger value="created">{t("me.created")}</TabsTrigger>
+              </TabsList>
+            }
+          >
+            {t("me.holdings")}
+          </SectionTitle>
+
+          <TabsContent value="held">
+            {HOLDINGS.length === 0 ? (
+              <Empty>{t("me.empty")}</Empty>
+            ) : (
+              <Card className="gap-0 py-0">
+                <div className="divide-y">
+                  {HOLDINGS.map((h) => {
+                    const v = h.tokens * h.token.price;
+                    const p = ((h.token.price - h.avgCost) / h.avgCost) * 100;
+                    return (
+                      <Link key={h.token.address} href={`/token/${h.token.address}`} className="flex items-center gap-3 p-3 hover:bg-accent">
+                        <TokenAvatar emoji={h.token.emoji} hue={h.token.hue} size={36} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate font-semibold">{h.token.name}</span>
+                            <span className="font-mono text-xs text-muted-foreground">${h.token.symbol}</span>
+                          </div>
+                          <div className="font-mono text-xs text-muted-foreground tabular">{fmtNum(h.tokens)}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-mono text-sm font-semibold tabular">{fmtUsd(v)}</div>
+                          <PctChange value={p} className="text-xs" />
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="created">
+            <Card className="gap-0 py-0">
+              <div className="divide-y">
+                {MY_TOKENS.map((tok) => (
+                  <Link key={tok.address} href={`/token/${tok.address}`} className="flex items-center gap-3 p-3 hover:bg-accent">
+                    <TokenAvatar emoji={tok.emoji} hue={tok.hue} size={36} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="truncate font-semibold">{h.token.name}</span>
-                        <span className="font-mono text-xs text-muted-foreground">${h.token.symbol}</span>
+                        <span className="truncate font-semibold">{tok.name}</span>
+                        <span className="font-mono text-xs text-muted-foreground">${tok.symbol}</span>
+                        {tok.graduated && <Badge variant="gold">{t("common.graduated")}</Badge>}
                       </div>
-                      <div className="font-mono text-xs text-muted-foreground tabular">{fmtNum(h.tokens)}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {t("token.feesEarned")} <span className="font-mono text-up tabular">{fmtUsd(tok.feesEarned * (PLATFORM.creatorShare / 100))}</span>
+                      </div>
                     </div>
                     <div className="text-right">
-                      <div className="font-mono text-sm font-semibold tabular">{fmtUsd(v)}</div>
-                      <PctChange value={p} className="text-xs" />
+                      <div className="font-mono text-sm tabular">{fmtUsd(tok.price)}</div>
+                      <PctChange value={tok.change24h} className="text-xs" />
                     </div>
                   </Link>
-                );
-              })}
-            </div>
-          </Card>
-        )}
+                ))}
+              </div>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </section>
 
       <section>

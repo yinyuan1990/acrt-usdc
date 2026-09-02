@@ -7,7 +7,10 @@ import puppeteer from "puppeteer-core";
 import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-const BASE = process.argv[2] ?? "http://localhost:3210";
+const args = process.argv.slice(2);
+const onlyIdx = args.indexOf("--only");
+const ONLY = onlyIdx >= 0 ? args.splice(onlyIdx, 2)[1] : null; // e.g. --only explore
+const BASE = args[0] ?? "http://localhost:3210";
 const OUT = resolve(import.meta.dirname, "../../docs/screens");
 mkdirSync(OUT, { recursive: true });
 
@@ -40,6 +43,7 @@ await page.goto(`${BASE}/`, { waitUntil: "networkidle0" });
 const firstToken = await page.$eval('a[href^="/token/"]', (a) => a.getAttribute("href").split("/").pop());
 
 for (const [name, path] of ROUTES) {
+  if (ONLY && name !== ONLY) continue;
   const url = path.replace("__FIRST__", firstToken);
   for (const theme of THEMES) {
     for (const [device, vp] of Object.entries(DEVICES)) {
@@ -49,6 +53,24 @@ for (const [name, path] of ROUTES) {
       const file = `${OUT}/${name}-${theme}-${device}.png`;
       await page.screenshot({ path: file, fullPage: device === "desktop" });
       console.log("saved", file);
+
+      // Extra state: Explore → Pulse view (desktop only)
+      if (name === "explore" && device === "desktop") {
+        const triggers = await page.$$('button[data-slot="tabs-trigger"]');
+        for (const h of triggers) {
+          const txt = await h.evaluate((b) => b.textContent?.trim());
+          if (txt === "Pulse") {
+            await h.click(); // real pointer events: Radix tabs activate on pointerdown
+            await new Promise((r) => setTimeout(r, 600));
+            await page.evaluate(() => document.querySelector('[data-slot="scroll-area"]')?.scrollIntoView({ block: "start" }));
+            await new Promise((r) => setTimeout(r, 300));
+            const f2 = `${OUT}/explore-pulse-${theme}-desktop.png`;
+            await page.screenshot({ path: f2, fullPage: false });
+            console.log("saved", f2);
+            break;
+          }
+        }
+      }
     }
   }
 }

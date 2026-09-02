@@ -204,6 +204,54 @@ export const PAYOUTS: Payout[] = Array.from({ length: 14 }, (_, i) => {
   return { hash: addr(i + 15000), time: BASE_NOW - i * 31 * 60_000 - Math.floor(r() * 300_000), token, usdc: Math.round((50 + r() * 320) * 100) / 100, status: i === 2 ? "claimable" : "paid" };
 });
 
+/** Global activity strip: recent buys / sells / launches across the platform (pump.fun-style). */
+export type Activity = { id: string; time: number; kind: "buy" | "sell" | "launch"; wallet: string; token: Token; usdc?: number };
+
+export const ACTIVITY: Activity[] = Array.from({ length: 24 }, (_, i) => {
+  const r = rng(i + 31337);
+  const token = TOKENS[Math.floor(r() * TOKENS.length)];
+  const roll = r();
+  const kind: Activity["kind"] = roll < 0.55 ? "buy" : roll < 0.85 ? "sell" : "launch";
+  return {
+    id: `act-${i}`,
+    time: BASE_NOW - i * 7_000 - Math.floor(r() * 5_000),
+    kind,
+    wallet: kind === "launch" ? token.creator : addr(i + 20000),
+    token,
+    usdc: kind === "launch" ? undefined : Math.round((r() ** 2 * 1500 + 5) * 100) / 100,
+  };
+});
+
+export type Comment = { id: string; wallet: string; time: number; text: string; isCreator?: boolean; likes: number; replyTo?: string };
+
+const COMMENT_TEXTS = [
+  "first. lp locked, dev bought 2%, we're so early",
+  "gas in usdc is such a cheat code, filled 50 buys for like 4 cents total",
+  "chart looks like the arc logo lol",
+  "creator here — fees auto-paid every 30 min, will route 100% back into buys until graduation",
+  "why is nobody talking about this",
+  "graduation at $10k paired, we're 60% there. send it",
+  "sold half, holding rest to graduation. fees forever is a real narrative",
+  "wen dexscreener",
+  "this is the cleanest launch on arc so far, no snipers in the first block",
+];
+
+export function commentsFor(token: Token, n = 9): Comment[] {
+  const r = rng(token.hue * 3 + 11);
+  return Array.from({ length: n }, (_, i) => {
+    const isCreator = i === 3;
+    return {
+      id: `${token.symbol}-c${i}`,
+      wallet: isCreator ? token.creator : addr(i + 25000 + token.hue),
+      time: BASE_NOW - i * 11 * 60_000 - Math.floor(r() * 400_000),
+      text: isCreator ? COMMENT_TEXTS[3] : COMMENT_TEXTS[(i + token.hue) % COMMENT_TEXTS.length],
+      isCreator,
+      likes: Math.floor(r() * 40),
+      replyTo: i === 5 ? `${token.symbol}-c3` : undefined,
+    };
+  });
+}
+
 export type Holding = { token: Token; tokens: number; avgCost: number };
 
 export const HOLDINGS: Holding[] = [TOKENS[0], TOKENS[2], TOKENS[5], TOKENS[9]].map((t, i) => {
