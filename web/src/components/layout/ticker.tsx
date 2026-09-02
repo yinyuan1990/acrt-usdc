@@ -4,7 +4,7 @@ import Link from "next/link";
 import { TOKENS } from "@/lib/mock";
 import { fmtUsd } from "@/lib/format";
 import { useApp } from "@/components/providers";
-import { PctChange } from "@/components/ui";
+import { PctChange } from "@/components/shared";
 
 export function Ticker() {
   const { t } = useApp();
@@ -15,20 +15,20 @@ export function Ticker() {
         <Link
           key={k + tok.address}
           href={`/token/${tok.address}`}
-          className="flex items-center gap-2 border-r border-line px-4 py-1.5 text-xs hover:bg-surface-2"
+          className="flex items-center gap-2 border-r px-4 py-1.5 text-xs hover:bg-accent"
         >
           <span>{tok.emoji}</span>
           <span className="font-semibold">{tok.symbol}</span>
-          <span className="font-mono text-fg-2 tabular">{fmtUsd(tok.price)}</span>
+          <span className="font-mono text-secondary-foreground tabular">{fmtUsd(tok.price)}</span>
           <PctChange value={tok.change24h} className="text-[11px]" />
         </Link>
       ))}
     </div>
   );
   return (
-    <div className="flex items-stretch border-t border-line bg-bg-2/60 text-xs">
-      <div className="flex shrink-0 items-center gap-1.5 border-r border-line px-3 font-mono text-[10px] text-accent">
-        <span className="h-1.5 w-1.5 rounded-pill bg-accent blink" />
+    <div className="flex items-stretch border-t bg-sidebar/60 text-xs">
+      <div className="flex shrink-0 items-center gap-1.5 border-r px-3 font-mono text-[10px] text-primary">
+        <span className="blink size-1.5 rounded-full bg-primary" />
         {t("common.live")}
       </div>
       <div className="no-scrollbar flex-1 overflow-hidden">

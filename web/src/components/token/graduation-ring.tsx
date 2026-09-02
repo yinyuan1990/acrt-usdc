@@ -1,7 +1,7 @@
 "use client";
 
 import { GraduationCap } from "lucide-react";
-import { cn } from "@/components/ui";
+import { cn } from "@/lib/utils";
 
 export function GraduationRing({ progress, size = 72, graduated, className }: { progress: number; size?: number; graduated?: boolean; className?: string }) {
   const pct = graduated ? 100 : Math.max(0, Math.min(100, progress));
@@ -12,13 +12,13 @@ export function GraduationRing({ progress, size = 72, graduated, className }: { 
   return (
     <div className={cn("relative shrink-0", className)} style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--surface-3)" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--accent)" strokeWidth={stroke} />
         <circle
           cx={size / 2}
           cy={size / 2}
           r={r}
           fill="none"
-          stroke={graduated ? "var(--gold)" : "var(--accent)"}
+          stroke={graduated ? "var(--gold)" : "var(--primary)"}
           strokeWidth={stroke}
           strokeLinecap="round"
           strokeDasharray={`${dash} ${c - dash}`}
@@ -26,11 +26,7 @@ export function GraduationRing({ progress, size = 72, graduated, className }: { 
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        {graduated ? (
-          <GraduationCap size={size * 0.36} className="text-gold" />
-        ) : (
-          <span className="font-mono text-sm font-semibold tabular">{pct.toFixed(0)}%</span>
-        )}
+        {graduated ? <GraduationCap size={size * 0.36} className="text-gold" /> : <span className="font-mono text-sm font-semibold tabular">{pct.toFixed(0)}%</span>}
       </div>
     </div>
   );

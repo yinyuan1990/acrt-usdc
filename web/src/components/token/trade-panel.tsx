@@ -4,15 +4,20 @@ import { useMemo, useState } from "react";
 import { Info, Lock, ShieldCheck } from "lucide-react";
 import type { Token } from "@/lib/mock";
 import { fmtNum, fmtUsd } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { useApp } from "@/components/providers";
-import { Button, cn } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const QUICK_USDC = [10, 50, 100, 500];
 const QUICK_PCT = [25, 50, 75, 100];
 
-export function TradePanel({ token, className }: { token: Token; className?: string }) {
+type Side = "buy" | "sell";
+
+export function TradePanel({ token, className, bare }: { token: Token; className?: string; bare?: boolean }) {
   const { t, connected, toggleConnect } = useApp();
-  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [side, setSide] = useState<Side>("buy");
   const [amount, setAmount] = useState("");
   const [slippage, setSlippage] = useState(2);
 
@@ -24,81 +29,77 @@ export function TradePanel({ token, className }: { token: Token; className?: str
     // Simplified constant-product estimate for UI only.
     const pooledUsdc = Math.max(token.pairedUsdc, 200);
     const pooledTok = pooledUsdc / token.price;
-    if (side === "buy") {
-      const inNet = num * 0.99;
-      const out = pooledTok - (pooledUsdc * pooledTok) / (pooledUsdc + inNet);
-      const impact = pooledUsdc > 0 ? (inNet / (pooledUsdc + inNet)) * 100 : 0;
-      return { out, impact, fee: num * 0.01 };
-    }
     const inNet = num * 0.99;
+    if (side === "buy") {
+      const out = pooledTok - (pooledUsdc * pooledTok) / (pooledUsdc + inNet);
+      return { out, impact: (inNet / (pooledUsdc + inNet)) * 100, fee: num * 0.01 };
+    }
     const out = pooledUsdc - (pooledUsdc * pooledTok) / (pooledTok + inNet);
-    const impact = pooledTok > 0 ? (inNet / (pooledTok + inNet)) * 100 : 0;
-    return { out, impact, fee: out * 0.01 };
+    return { out, impact: (inNet / (pooledTok + inNet)) * 100, fee: out * 0.01 };
   }, [num, side, token]);
 
   const minReceived = quote.out * (1 - slippage / 100);
 
-  return (
-    <div className={cn("card p-4", className)}>
-      <div className="grid grid-cols-2 gap-1 rounded-btn bg-surface-2 p-1">
-        <button
-          onClick={() => setSide("buy")}
-          className={cn("rounded-xs py-2 text-sm font-semibold transition-colors", side === "buy" ? "bg-up text-black" : "text-muted hover:text-fg")}
-        >
-          {t("common.buy")}
-        </button>
-        <button
-          onClick={() => setSide("sell")}
-          className={cn("rounded-xs py-2 text-sm font-semibold transition-colors", side === "sell" ? "bg-down text-white" : "text-muted hover:text-fg")}
-        >
-          {t("common.sell")}
-        </button>
-      </div>
+  const body = (
+    <>
+      <Tabs value={side} onValueChange={(v) => setSide(v as Side)}>
+        <TabsList className="h-10 w-full">
+          <TabsTrigger value="buy" className="font-semibold data-active:bg-up! data-active:text-black!">
+            {t("common.buy")}
+          </TabsTrigger>
+          <TabsTrigger value="sell" className="font-semibold data-active:bg-down! data-active:text-white!">
+            {t("common.sell")}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       <div className="mt-4">
-        <div className="mb-1 flex items-center justify-between text-xs text-muted">
+        <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
           <span>{t("token.youPay")}</span>
           <span className="font-mono tabular">
             {t("common.balance")}: {side === "buy" ? `${fmtNum(usdcBalance, 2)} USDC` : `${fmtNum(tokenBalance)} ${token.symbol}`}
           </span>
         </div>
-        <div className="flex items-center gap-2 rounded-btn border border-line bg-surface-2 px-3 py-2 focus-within:border-accent">
+        <div className="flex items-center gap-2 rounded-lg border border-input bg-muted px-3 py-2 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
           <input
             type="number"
             inputMode="decimal"
             placeholder="0.00"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="min-w-0 flex-1 bg-transparent font-mono text-xl outline-none tabular placeholder:text-muted"
+            className="min-w-0 flex-1 bg-transparent font-mono text-xl outline-none tabular placeholder:text-muted-foreground"
           />
-          <span className="rounded-xs bg-surface-3 px-2 py-1 font-mono text-xs">{side === "buy" ? "USDC" : token.symbol}</span>
+          <span className="rounded-md bg-accent px-2 py-1 font-mono text-xs">{side === "buy" ? "USDC" : token.symbol}</span>
         </div>
         <div className="mt-2 grid grid-cols-4 gap-1.5">
           {(side === "buy" ? QUICK_USDC : QUICK_PCT).map((q) => (
-            <button
+            <Button
               key={q}
+              variant="outline"
+              size="xs"
+              className="font-mono"
               onClick={() => setAmount(side === "buy" ? String(q) : String(Math.floor((tokenBalance * q) / 100)))}
-              className="rounded-xs border border-line py-1 font-mono text-[11px] text-fg-2 hover:bg-surface-2"
             >
               {side === "buy" ? `$${q}` : `${q}%`}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
 
-      <div className="mt-3 space-y-1.5 rounded-btn bg-surface-2 p-3 text-xs">
+      <div className="mt-3 space-y-1.5 rounded-lg bg-muted p-3 text-xs">
         <Row label={t("token.youReceive")} value={num ? `${side === "buy" ? fmtNum(quote.out) : fmtUsd(quote.out)} ${side === "buy" ? token.symbol : ""}` : "—"} strong />
         <Row label={t("token.minReceived")} value={num ? `${side === "buy" ? fmtNum(minReceived) : fmtUsd(minReceived)}` : "—"} />
-        <Row label={t("token.priceImpact")} value={num ? `${quote.impact.toFixed(2)}%` : "—"} tone={quote.impact > 5 ? "down" : undefined} />
+        <Row label={t("token.priceImpact")} value={num ? `${quote.impact.toFixed(2)}%` : "—"} warn={quote.impact > 5} />
         <Row label={`${t("common.fee")} (1%)`} value={num ? fmtUsd(quote.fee) : "—"} />
         <div className="flex items-center justify-between pt-1">
-          <span className="text-muted">{t("common.slippage")}</span>
+          <span className="text-muted-foreground">{t("common.slippage")}</span>
           <div className="flex gap-1">
             {[0.5, 1, 2, 5].map((s) => (
               <button
                 key={s}
+                type="button"
                 onClick={() => setSlippage(s)}
-                className={cn("rounded-xs px-1.5 py-0.5 font-mono text-[11px]", slippage === s ? "bg-accent text-accent-fg" : "text-muted hover:text-fg")}
+                className={cn("rounded-md px-1.5 py-0.5 font-mono text-[11px]", slippage === s ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}
               >
                 {s}%
               </button>
@@ -108,15 +109,15 @@ export function TradePanel({ token, className }: { token: Token; className?: str
       </div>
 
       {token.protectionActive && (
-        <div className="mt-3 flex items-start gap-2 rounded-btn bg-gold-soft p-2.5 text-[11px] text-gold">
+        <div className="mt-3 flex items-start gap-2 rounded-lg bg-gold/15 p-2.5 text-[11px] text-gold">
           <ShieldCheck size={14} className="mt-0.5 shrink-0" />
           {t("token.protectionActive")}
         </div>
       )}
 
       <Button
-        size="lg"
-        variant={connected ? (side === "buy" ? "up" : "down") : "primary"}
+        size="xl"
+        variant={connected ? (side === "buy" ? "up" : "down") : "glow"}
         className="mt-4 w-full"
         onClick={connected ? undefined : toggleConnect}
         disabled={connected && num <= 0}
@@ -124,7 +125,7 @@ export function TradePanel({ token, className }: { token: Token; className?: str
         {connected ? `${side === "buy" ? t("common.buy") : t("common.sell")} ${token.symbol}` : t("common.connect")}
       </Button>
 
-      <div className="mt-3 flex items-center justify-center gap-3 text-[11px] text-muted">
+      <div className="mt-3 flex items-center justify-center gap-3 text-[11px] text-muted-foreground">
         <span className="inline-flex items-center gap-1">
           <Lock size={11} /> {t("token.lpLocked")}
         </span>
@@ -132,15 +133,22 @@ export function TradePanel({ token, className }: { token: Token; className?: str
           <Info size={11} /> {t("common.finality")}
         </span>
       </div>
-    </div>
+    </>
+  );
+
+  if (bare) return <div className={className}>{body}</div>;
+  return (
+    <Card className={className}>
+      <CardContent>{body}</CardContent>
+    </Card>
   );
 }
 
-function Row({ label, value, strong, tone }: { label: string; value: string; strong?: boolean; tone?: "down" }) {
+function Row({ label, value, strong, warn }: { label: string; value: string; strong?: boolean; warn?: boolean }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-muted">{label}</span>
-      <span className={cn("font-mono tabular", strong && "font-semibold text-fg", tone === "down" && "text-down")}>{value}</span>
+      <span className="text-muted-foreground">{label}</span>
+      <span className={cn("font-mono tabular", strong && "font-semibold text-foreground", warn && "text-down")}>{value}</span>
     </div>
   );
 }

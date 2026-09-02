@@ -30,6 +30,7 @@ npm run build
 node scripts/shots.mjs http://localhost:3000   # 重新生成 docs/screens 截图（需本机 Edge/Chrome）
 ```
 
+- UI 基座：[shadcn/ui](https://ui.shadcn.com)（radix-nova），组件源码在 `web/src/components/ui/`；加组件用 `npx shadcn@latest add <name>`
 - 主题：右上角 / 左侧栏切换，或 URL 加 `?theme=arc` / `?theme=terminal`
 - 语言：`?lang=zh` / `?lang=en`
 - 当前为 mock 数据；合约上测试网后接索引器 API

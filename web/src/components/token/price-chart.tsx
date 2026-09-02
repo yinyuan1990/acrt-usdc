@@ -20,8 +20,9 @@ export function PriceChart({ candles, className }: { candles: Candle[]; classNam
 
     const up = cssVar("--up");
     const down = cssVar("--down");
-    const muted = cssVar("--muted");
-    const line = cssVar("--line");
+    const muted = cssVar("--muted-foreground");
+    const line = cssVar("--border");
+    const labelBg = cssVar("--accent");
     const mono = cssVar("--font-mono");
 
     const chart = createChart(el, {
@@ -30,7 +31,7 @@ export function PriceChart({ candles, className }: { candles: Candle[]; classNam
       grid: { vertLines: { color: line }, horzLines: { color: line } },
       rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.1, bottom: 0.25 } },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
-      crosshair: { vertLine: { color: muted, labelBackgroundColor: cssVar("--surface-3") }, horzLine: { color: muted, labelBackgroundColor: cssVar("--surface-3") } },
+      crosshair: { vertLine: { color: muted, labelBackgroundColor: labelBg }, horzLine: { color: muted, labelBackgroundColor: labelBg } },
       handleScroll: { vertTouchDrag: false },
     });
     chartRef.current = chart;
