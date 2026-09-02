@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { BadgeCheck, Lock, Rocket, ShieldCheck, Zap } from "lucide-react";
+import { BadgeCheck, ImagePlus, Lock, Rocket, ShieldCheck, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { useReadContract } from "wagmi";
 import { formatUnits, parseEventLogs, parseUnits, type Address } from "viem";
-import { fetchLaunchQuote, useConfig } from "@/lib/api";
+import { fetchLaunchQuote, uploadLogo, useConfig } from "@/lib/api";
 import { fmtUsd } from "@/lib/format";
 import { ADDR, SUPPLY_TOKENS, erc20Abi, factoryAbi } from "@/lib/web3";
 import { useTx } from "@/lib/tx";
@@ -45,6 +45,22 @@ export default function CreatePage() {
   const [startMcap, setStartMcap] = useState(5000);
   const [initialBuy, setInitialBuy] = useState("");
   const [busy, setBusy] = useState<null | "approve" | "launch">(null);
+  const [uploading, setUploading] = useState(false);
+
+  const onPickFile = async (file?: File) => {
+    if (!file) return;
+    if (file.size > 1024 * 1024) return toast.error("max 1 MB");
+    setUploading(true);
+    try {
+      const { url } = await uploadLogo(file);
+      setLogoUrl(url);
+      toast.success(t("create.uploaded"));
+    } catch (e) {
+      toast.error(errMsg(e));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const me = address as Address | undefined;
   const feeQ = useReadContract({ address: ADDR.factory, abi: factoryAbi, functionName: "quoteCreationFee", args: me ? [me] : undefined, query: { enabled: !!me } });
@@ -138,13 +154,27 @@ export default function CreatePage() {
                   <Field label={t("create.symbol")} htmlFor="symbol"><Input id="symbol" value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} maxLength={10} placeholder="ACAT" className="font-mono uppercase" /></Field>
                 </div>
                 <Field label={t("create.logo")} hint={t("create.dropLogo")}>
-                  <div className="flex flex-col gap-3">
-                    <div className="flex flex-wrap gap-1.5">
-                      {EMOJIS.map((e) => (
-                        <Button key={e} type="button" variant={emoji === e && !logoUrl ? "default" : "secondary"} size="icon-lg" className="text-lg" onClick={() => { setEmoji(e); setLogoUrl(""); }}>{e}</Button>
-                      ))}
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                    <label className={cn("flex size-28 shrink-0 cursor-pointer flex-col items-center justify-center gap-1 overflow-hidden rounded-lg border border-dashed border-input text-[11px] text-muted-foreground hover:border-ring hover:text-foreground", uploading && "opacity-60")}>
+                      {logoUrl && /^https?:/.test(logoUrl) ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={logoUrl} alt="" className="size-full object-cover" />
+                      ) : (
+                        <>
+                          <ImagePlus size={20} />
+                          <span className="px-2 text-center leading-tight">{uploading ? t("create.uploading") : t("create.upload")}</span>
+                        </>
+                      )}
+                      <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" disabled={uploading} onChange={(e) => void onPickFile(e.target.files?.[0])} />
+                    </label>
+                    <div className="flex-1 space-y-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {EMOJIS.map((e) => (
+                          <Button key={e} type="button" variant={emoji === e && !logoUrl ? "default" : "secondary"} size="icon-lg" className="text-lg" onClick={() => { setEmoji(e); setLogoUrl(""); }}>{e}</Button>
+                        ))}
+                      </div>
+                      <Input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="https://…/logo.png" />
                     </div>
-                    <Input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="https://…/logo.png (optional)" />
                   </div>
                 </Field>
               </div>

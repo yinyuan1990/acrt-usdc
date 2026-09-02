@@ -4,7 +4,7 @@ import { getAddress, isAddress, type Address } from "viem";
 import { sql } from "./db.js";
 import { client, ADDR } from "./chain.js";
 import { deployments, config } from "./config.js";
-import { factoryAbi, lockerAbi, erc20Abi } from "./abi.js";
+import { factoryAbi, lockerAbi, erc20Abi, treasuryAbi } from "./abi.js";
 import { sqrtPriceX96ForMcap } from "./price.js";
 
 export const app = new Hono();
@@ -258,8 +258,38 @@ app.get("/api/creator/:address", async (c) => {
 app.get("/api/treasury", async (c) => {
   const [s] = await sql`select coalesce(sum(creation_fee_paid),0) as creation from tokens`;
   const [f] = await sql`select coalesce(sum(quote_protocol),0) as proto from fee_events`;
-  const bal = await client.readContract({ address: ADDR.usdc, abi: erc20Abi, functionName: "balanceOf", args: [ADDR.treasury] }).catch(() => 0n);
-  return c.json({ address: ADDR.treasury, usdcBalance: bal.toString(), fromCreationFees: s.creation, fromTradeFees: f.proto, buybackBps: 8200, ecoBps: 1800, burns: [] });
+  const [platformToken, bal, threshold, maxPer, totalBoughtBack, totalBurned, totalToEco, ecoFund] = await client.multicall({
+    allowFailure: false,
+    contracts: [
+      { address: ADDR.treasury, abi: treasuryAbi, functionName: "platformToken" },
+      { address: ADDR.treasury, abi: treasuryAbi, functionName: "usdcBalance" },
+      { address: ADDR.treasury, abi: treasuryAbi, functionName: "executeThreshold" },
+      { address: ADDR.treasury, abi: treasuryAbi, functionName: "maxPerExecute" },
+      { address: ADDR.treasury, abi: treasuryAbi, functionName: "totalBoughtBack" },
+      { address: ADDR.treasury, abi: treasuryAbi, functionName: "totalBurned" },
+      { address: ADDR.treasury, abi: treasuryAbi, functionName: "totalToEco" },
+      { address: ADDR.treasury, abi: treasuryAbi, functionName: "ecoFund" },
+    ],
+  });
+  const burns = await sql`select tx_hash, ts, usdc_spent, tokens_burned, usdc_to_eco from burns order by ts desc limit 100`;
+  const configured = platformToken !== "0x0000000000000000000000000000000000000000";
+  const [pt] = configured ? await sql`select * from tokens where address = ${getAddress(platformToken)}` : [null];
+  return c.json({
+    address: ADDR.treasury,
+    usdcBalance: bal.toString(),
+    fromCreationFees: s.creation,
+    fromTradeFees: f.proto,
+    buybackBps: 8200,
+    ecoBps: 1800,
+    executeThreshold: threshold.toString(),
+    maxPerExecute: maxPer.toString(),
+    ecoFund,
+    totalBoughtBackUsdc: totalBoughtBack.toString(),
+    totalBurned: totalBurned.toString(),
+    totalToEcoUsdc: totalToEco.toString(),
+    platformToken: configured ? shapeToken(pt as Record<string, unknown>) : null,
+    burns: burns.map((b) => ({ hash: b.tx_hash, time: b.ts, usdcSpent: b.usdc_spent, tokensBurned: b.tokens_burned, usdcToEco: b.usdc_to_eco })),
+  });
 });
 
 app.get("/api/wallet/:address", async (c) => {
@@ -274,6 +304,114 @@ app.get("/api/wallet/:address", async (c) => {
     holdings: holdings.map((h) => ({ balance: h.balance, valueUsd: (Number(h.balance) / 1e18) * Number(h.last_price), token: shapeToken(h) })),
     trades: trades.map((r) => ({ time: r.ts, side: r.side, usdc: r.usdc, tokens: r.tokens, price: r.price, hash: r.tx_hash, token: r.token, symbol: r.symbol, logo: r.logo })),
   });
+});
+
+// ---------------------------------------------------------------- logo upload
+
+const UPLOAD_DIR = process.env.UPLOAD_DIR ?? "./uploads";
+const MAX_UPLOAD = 1024 * 1024; // 1 MB
+const PUBLIC_BASE = process.env.PUBLIC_BASE_URL ?? "https://launch.hzmrbq.com";
+
+function sniffImage(buf: Uint8Array): string | null {
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "png";
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "jpg";
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return "gif";
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return "webp";
+  return null;
+}
+
+app.post("/api/upload", async (c) => {
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const { createHash } = await import("node:crypto");
+  const body = await c.req.parseBody();
+  const file = body["file"];
+  if (!(file instanceof File)) return c.json({ error: "file required" }, 400);
+  if (file.size > MAX_UPLOAD) return c.json({ error: "max 1 MB" }, 413);
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const ext = sniffImage(buf);
+  if (!ext) return c.json({ error: "png/jpg/gif/webp only" }, 415);
+  const name = `${createHash("sha256").update(buf).digest("hex").slice(0, 32)}.${ext}`;
+  await mkdir(UPLOAD_DIR, { recursive: true });
+  await writeFile(`${UPLOAD_DIR}/${name}`, buf);
+  return c.json({ url: `${PUBLIC_BASE}/api/uploads/${name}`, name, size: buf.length });
+});
+
+app.get("/api/uploads/:name", async (c) => {
+  const { readFile } = await import("node:fs/promises");
+  const name = c.req.param("name");
+  if (!/^[a-f0-9]{32}\.(png|jpg|gif|webp)$/.test(name)) return c.json({ error: "not found" }, 404);
+  try {
+    const data = await readFile(`${UPLOAD_DIR}/${name}`);
+    const type = { png: "image/png", jpg: "image/jpeg", gif: "image/gif", webp: "image/webp" }[name.split(".")[1]]!;
+    return new Response(data, { headers: { "content-type": type, "cache-control": "public, max-age=31536000, immutable" } });
+  } catch {
+    return c.json({ error: "not found" }, 404);
+  }
+});
+
+// ---------------------------------------------------------------- comments (off-chain, wallet-signed)
+
+export const commentMessage = (token: string, text: string, ts: number, replyTo?: number | null) =>
+  `ArcLaunch comment\ntoken: ${token.toLowerCase()}\nreplyTo: ${replyTo ?? "-"}\nts: ${ts}\n\n${text}`;
+export const likeMessage = (commentId: number, ts: number) => `ArcLaunch like\ncomment: ${commentId}\nts: ${ts}`;
+
+async function verifySig(author: string, message: string, signature: string) {
+  const { verifyMessage } = await import("viem");
+  return verifyMessage({ address: getAddress(author), message, signature: signature as `0x${string}` });
+}
+
+app.get("/api/tokens/:address/comments", async (c) => {
+  const a = addr(c.req.param("address"));
+  const viewer = c.req.query("viewer");
+  const [t] = await sql`select deployer, payout from tokens where address = ${a}`;
+  if (!t) return c.json({ error: "not found" }, 404);
+  const rows = await sql`
+    select cm.id, cm.author, cm.text, cm.reply_to, cm.ts,
+           (select count(*) from comment_likes l where l.comment_id = cm.id) as likes,
+           ${viewer && isAddress(viewer) ? sql`exists(select 1 from comment_likes l where l.comment_id = cm.id and l.author = ${getAddress(viewer)})` : sql`false`} as liked
+    from comments cm where cm.token = ${a} order by cm.ts asc limit 500`;
+  return c.json(rows.map((r) => ({
+    id: Number(r.id), author: r.author, text: r.text, replyTo: r.reply_to ? Number(r.reply_to) : null, time: r.ts,
+    likes: Number(r.likes), liked: !!r.liked,
+    isCreator: r.author.toLowerCase() === t.deployer.toLowerCase() || r.author.toLowerCase() === t.payout.toLowerCase(),
+  })));
+});
+
+app.post("/api/tokens/:address/comments", async (c) => {
+  const a = addr(c.req.param("address"));
+  const body = await c.req.json<{ author: string; text: string; replyTo?: number | null; ts: number; signature: string }>();
+  const text = (body.text ?? "").trim();
+  if (!text || text.length > 280) return c.json({ error: "text 1–280 chars" }, 400);
+  if (!isAddress(body.author)) return c.json({ error: "bad author" }, 400);
+  if (Math.abs(Date.now() - body.ts) > 5 * 60_000) return c.json({ error: "stale timestamp" }, 400);
+  const [t] = await sql`select 1 from tokens where address = ${a}`;
+  if (!t) return c.json({ error: "not found" }, 404);
+  if (body.replyTo) {
+    const [p] = await sql`select 1 from comments where id = ${body.replyTo} and token = ${a}`;
+    if (!p) return c.json({ error: "bad replyTo" }, 400);
+  }
+  const ok = await verifySig(body.author, commentMessage(a, text, body.ts, body.replyTo ?? null), body.signature).catch(() => false);
+  if (!ok) return c.json({ error: "bad signature" }, 401);
+  const author = getAddress(body.author);
+  const [recent] = await sql`select ts from comments where author = ${author} order by ts desc limit 1`;
+  if (recent && Date.now() - new Date(recent.ts).getTime() < 10_000) return c.json({ error: "slow down" }, 429);
+  const [row] = await sql`insert into comments (token, author, text, reply_to, signature) values (${a}, ${author}, ${text}, ${body.replyTo ?? null}, ${body.signature}) returning id, ts`;
+  return c.json({ id: Number(row.id), time: row.ts });
+});
+
+app.post("/api/comments/:id/like", async (c) => {
+  const id = Number(c.req.param("id"));
+  const body = await c.req.json<{ author: string; ts: number; signature: string }>();
+  if (!isAddress(body.author) || !Number.isFinite(id)) return c.json({ error: "bad request" }, 400);
+  if (Math.abs(Date.now() - body.ts) > 5 * 60_000) return c.json({ error: "stale timestamp" }, 400);
+  const ok = await verifySig(body.author, likeMessage(id, body.ts), body.signature).catch(() => false);
+  if (!ok) return c.json({ error: "bad signature" }, 401);
+  const author = getAddress(body.author);
+  const [existing] = await sql`select 1 from comment_likes where comment_id = ${id} and author = ${author}`;
+  if (existing) await sql`delete from comment_likes where comment_id = ${id} and author = ${author}`;
+  else await sql`insert into comment_likes (comment_id, author) values (${id}, ${author})`;
+  const [{ n }] = await sql`select count(*) as n from comment_likes where comment_id = ${id}`;
+  return c.json({ liked: !existing, likes: Number(n) });
 });
 
 app.onError((err, c) => {

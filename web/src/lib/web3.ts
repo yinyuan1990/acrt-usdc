@@ -1,5 +1,5 @@
 import { createConfig, http } from "wagmi";
-import { injected } from "wagmi/connectors";
+import { coinbaseWallet, injected, walletConnect } from "wagmi/connectors";
 import { arcTestnet } from "viem/chains";
 import { parseAbi, type Address } from "viem";
 import deployments from "./deployments.arc-testnet.json";
@@ -20,9 +20,17 @@ export const ADDR = {
 export const POOL_FEE = 10_000;
 export const SUPPLY_TOKENS = 1_000_000_000;
 
+// WalletConnect needs a (free) project id from dashboard.reown.com; enabled only when provided.
+const WC_PROJECT_ID = process.env.NEXT_PUBLIC_WC_PROJECT_ID;
+
 export const wagmiConfig = createConfig({
   chains: [chain],
-  connectors: [injected({ shimDisconnect: true })],
+  // EIP-6963 discovery (default on) adds every installed browser wallet as its own connector.
+  connectors: [
+    injected({ shimDisconnect: true }),
+    coinbaseWallet({ appName: "ArcLaunch", preference: "all" }),
+    ...(WC_PROJECT_ID ? [walletConnect({ projectId: WC_PROJECT_ID, showQrModal: true, metadata: { name: "ArcLaunch", description: "Launch tokens on Arc, settled in USDC", url: "https://launch.hzmrbq.com", icons: [] } })] : []),
+  ],
   transports: { [chain.id]: http(chain.rpcUrls.default.http[0]) },
   ssr: true,
 });

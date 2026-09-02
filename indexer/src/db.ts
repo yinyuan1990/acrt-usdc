@@ -105,6 +105,33 @@ export async function migrate() {
   )`;
   await sql`create index if not exists fee_events_payout_ts on fee_events (payout, ts desc)`;
 
+  await sql`create table if not exists burns (
+    id bigserial primary key,
+    tx_hash text not null unique,
+    block_number bigint not null,
+    ts timestamptz not null,
+    usdc_spent numeric(78,0) not null,
+    tokens_burned numeric(78,0) not null,
+    usdc_to_eco numeric(78,0) not null
+  )`;
+
+  await sql`create table if not exists comments (
+    id bigserial primary key,
+    token text not null references tokens(address),
+    author text not null,
+    text text not null,
+    reply_to bigint references comments(id),
+    signature text not null,
+    ts timestamptz not null default now()
+  )`;
+  await sql`create index if not exists comments_token_ts on comments (token, ts desc)`;
+
+  await sql`create table if not exists comment_likes (
+    comment_id bigint not null references comments(id),
+    author text not null,
+    primary key (comment_id, author)
+  )`;
+
   await sql`create table if not exists claims (
     id bigserial primary key,
     account text not null,

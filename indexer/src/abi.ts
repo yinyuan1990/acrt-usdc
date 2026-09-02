@@ -41,3 +41,23 @@ export const poolAbi = parseAbi([
 ]);
 
 export const erc20Abi = parseAbi(["function balanceOf(address) view returns (uint256)"]);
+
+export const treasuryAbi = parseAbi([
+  "event Executed(uint256 usdcSpent, uint256 tokensBurned, uint256 usdcToEco)",
+  "event Configured(address platformToken, uint24 poolFee, address ecoFund, uint256 threshold, uint256 maxPerExecute)",
+  "function execute(uint256 minTokensOut)",
+  "function usdcBalance() view returns (uint256)",
+  "function executeThreshold() view returns (uint256)",
+  "function maxPerExecute() view returns (uint256)",
+  "function platformToken() view returns (address)",
+  "function platformPoolFee() view returns (uint24)",
+  "function ecoFund() view returns (address)",
+  "function totalBoughtBack() view returns (uint256)",
+  "function totalBurned() view returns (uint256)",
+  "function totalToEco() view returns (uint256)",
+]);
+
+export const quoterAbi = parseAbi([
+  "struct QuoteExactInputSingleParams { address tokenIn; address tokenOut; uint256 amountIn; uint24 fee; uint160 sqrtPriceLimitX96; }",
+  "function quoteExactInputSingle(QuoteExactInputSingleParams params) returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)",
+]);

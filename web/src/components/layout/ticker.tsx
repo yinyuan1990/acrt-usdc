@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 import { useApp } from "@/components/providers";
 import { PctChange, TokenAvatar, WalletDot } from "@/components/shared";
 
+const BURN_ADDRESS = "0x000000000000000000000000000000000000dead";
+
 /**
  * Two-row live strip, pump.fun style:
  *  row 1 — activity feed (wallet bought/sold $X of TOKEN, new launches)
@@ -19,19 +21,22 @@ export function Ticker() {
 
   const activityRow = (k: string) => (
     <div key={k} className="flex shrink-0 items-center">
-      {activity.map((a, i) => (
+      {activity.map((a, i) => {
+        const isBurn = a.wallet.toLowerCase() === BURN_ADDRESS;
+        return (
         <Link key={k + a.tx + i} href={`/token/${a.token}`} className="flex items-center gap-2 border-r px-3 py-1.5 text-xs hover:bg-accent">
-          <WalletDot address={a.wallet} />
-          <span className="font-mono text-muted-foreground">{shortAddr(a.wallet, 4, 3)}</span>
-          <span className={cn("font-medium", a.kind === "buy" ? "text-up" : a.kind === "sell" ? "text-down" : "text-gold")}>
-            {a.kind === "buy" ? t("activity.bought") : a.kind === "sell" ? t("activity.sold") : t("activity.launched")}
+          {isBurn ? <span className="text-[13px] leading-none">🔥</span> : <WalletDot address={a.wallet} />}
+          <span className="font-mono text-muted-foreground">{isBurn ? "Treasury" : shortAddr(a.wallet, 4, 3)}</span>
+          <span className={cn("font-medium", isBurn ? "text-gold" : a.kind === "buy" ? "text-up" : a.kind === "sell" ? "text-down" : "text-gold")}>
+            {isBurn ? t("activity.burned") : a.kind === "buy" ? t("activity.bought") : a.kind === "sell" ? t("activity.sold") : t("activity.launched")}
           </span>
           {a.usdc !== undefined && <span className="font-mono tabular">{fmtUsd(usd(a.usdc))}</span>}
           {a.usdc !== undefined && <span className="text-muted-foreground">{t("activity.of")}</span>}
           <TokenAvatar logo={a.logo} symbol={a.symbol} seed={a.token} size={16} className="rounded-sm" />
           <span className="font-semibold">{a.symbol}</span>
         </Link>
-      ))}
+        );
+      })}
     </div>
   );
 

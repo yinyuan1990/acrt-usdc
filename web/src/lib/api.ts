@@ -60,7 +60,14 @@ export type WalletView = {
   holdings: { balance: string; valueUsd: number; token: TokenView }[];
   trades: { time: string; side: "buy" | "sell"; usdc: string; tokens: string; price: number; hash: string; token: string; symbol: string; logo: string }[];
 };
-export type TreasuryView = { address: string; usdcBalance: string; fromCreationFees: string; fromTradeFees: string; buybackBps: number; ecoBps: number; burns: unknown[] };
+export type Burn = { hash: string; time: string; usdcSpent: string; tokensBurned: string; usdcToEco: string };
+export type TreasuryView = {
+  address: string; usdcBalance: string; fromCreationFees: string; fromTradeFees: string; buybackBps: number; ecoBps: number;
+  executeThreshold: string; maxPerExecute: string; ecoFund: string;
+  totalBoughtBackUsdc: string; totalBurned: string; totalToEcoUsdc: string;
+  platformToken: TokenView | null; burns: Burn[];
+};
+export type Comment = { id: number; author: string; text: string; replyTo: number | null; time: string; likes: number; liked: boolean; isCreator: boolean };
 export type ConfigView = {
   chainId: number;
   addresses: Record<string, string | number>;
@@ -100,6 +107,31 @@ export const useWallet = (address?: string) =>
 export const useTreasury = () => useQuery({ queryKey: ["treasury"], queryFn: () => get<TreasuryView>("/treasury"), refetchInterval: 15_000 });
 export const fetchLaunchQuote = (mcapUsd: number, account?: string) =>
   get<LaunchQuote>(`/launch-quote?mcapUsd=${mcapUsd}${account ? `&account=${account}` : ""}`);
+export const useComments = (address?: string, viewer?: string) =>
+  useQuery({ queryKey: ["comments", address, viewer], queryFn: () => get<Comment[]>(`/tokens/${address}/comments${viewer ? `?viewer=${viewer}` : ""}`), enabled: !!address, refetchInterval: 8_000 });
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((json as { error?: string }).error ?? `${res.status}`);
+  return json as T;
+}
+export const postComment = (token: string, body: { author: string; text: string; replyTo: number | null; ts: number; signature: string }) =>
+  post<{ id: number; time: string }>(`/tokens/${token}/comments`, body);
+export const postLike = (id: number, body: { author: string; ts: number; signature: string }) => post<{ liked: boolean; likes: number }>(`/comments/${id}/like`, body);
+export async function uploadLogo(file: File): Promise<{ url: string }> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(`${API_BASE}/upload`, { method: "POST", body: fd });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((json as { error?: string }).error ?? `${res.status}`);
+  return json as { url: string };
+}
+
+/** Must match indexer/src/api.ts */
+export const commentMessage = (token: string, text: string, ts: number, replyTo?: number | null) =>
+  `ArcLaunch comment\ntoken: ${token.toLowerCase()}\nreplyTo: ${replyTo ?? "-"}\nts: ${ts}\n\n${text}`;
+export const likeMessage = (commentId: number, ts: number) => `ArcLaunch like\ncomment: ${commentId}\nts: ${ts}`;
 
 /** Progress toward graduation, 0–100. */
 export const progressOf = (t: TokenView) => {

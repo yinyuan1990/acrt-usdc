@@ -2,7 +2,7 @@ import type { Address } from "viem";
 import { client, keeperWallet, ADDR } from "./chain.js";
 import { config } from "./config.js";
 import { sql } from "./db.js";
-import { factoryAbi, lockerAbi } from "./abi.js";
+import { factoryAbi, lockerAbi, treasuryAbi, quoterAbi } from "./abi.js";
 
 /**
  * Keeper: pushes creator/protocol fees on a schedule and persists graduation.
@@ -43,4 +43,36 @@ async function tick(wallet: ReturnType<typeof keeperWallet>["wallet"], _me: Addr
       console.log(`[keeper] markGraduated ${t.address} → ${rc.status} ${hash}`);
     }
   }
+  await buyback(wallet);
+}
+
+/** Treasury buyback & burn: permissionless `execute()`, gated by the on-chain threshold. */
+async function buyback(wallet: ReturnType<typeof keeperWallet>["wallet"]) {
+  const [platformToken, bal, threshold, maxPer, fee] = await client.multicall({
+    allowFailure: false,
+    contracts: [
+      { address: ADDR.treasury, abi: treasuryAbi, functionName: "platformToken" },
+      { address: ADDR.treasury, abi: treasuryAbi, functionName: "usdcBalance" },
+      { address: ADDR.treasury, abi: treasuryAbi, functionName: "executeThreshold" },
+      { address: ADDR.treasury, abi: treasuryAbi, functionName: "maxPerExecute" },
+      { address: ADDR.treasury, abi: treasuryAbi, functionName: "platformPoolFee" },
+    ],
+  });
+  if (platformToken === "0x0000000000000000000000000000000000000000" || bal < threshold || bal === 0n) return;
+  const spend = maxPer > 0n && bal > maxPer ? maxPer : bal;
+  const toBuy = (spend * 8_200n) / 10_000n;
+  // slippage guard: quote the buy and accept 3% worse
+  let minOut = 0n;
+  try {
+    const { result } = await client.simulateContract({
+      address: ADDR.quoter, abi: quoterAbi, functionName: "quoteExactInputSingle",
+      args: [{ tokenIn: ADDR.usdc, tokenOut: platformToken, amountIn: toBuy, fee, sqrtPriceLimitX96: 0n }],
+    });
+    minOut = (result[0] * 97n) / 100n;
+  } catch (e) {
+    console.warn("[keeper] buyback quote failed, using minOut=0:", (e as Error).message.split("\n")[0]);
+  }
+  const hash = await wallet.writeContract({ address: ADDR.treasury, abi: treasuryAbi, functionName: "execute", args: [minOut], chain: wallet.chain, account: wallet.account! });
+  const rc = await client.waitForTransactionReceipt({ hash });
+  console.log(`[keeper] treasury.execute spend=${spend} buy=${toBuy} minOut=${minOut} → ${rc.status} ${hash}`);
 }

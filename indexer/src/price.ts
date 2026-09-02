@@ -3,19 +3,14 @@
 const SCALE = 10n ** 27n; // mcap(6dp) / 1e27 = price_raw (token0 orientation)
 const Q96 = 2n ** 96n;
 
+/** Floor square root. Newton from a power-of-two upper bound: strictly decreasing, O(log n) iterations. */
 export function isqrt(n: bigint): bigint {
   if (n < 0n) throw new Error("sqrt of negative");
   if (n < 2n) return n;
-  let x = BigInt(Math.floor(Math.sqrt(Number(n))));
-  // Newton refinement for big values
+  let x = 1n << BigInt((n.toString(2).length + 1) >> 1); // ≥ sqrt(n)
   for (;;) {
     const y = (x + n / x) >> 1n;
-    if (y >= x) {
-      // verify
-      while (x * x > n) x -= 1n;
-      while ((x + 1n) * (x + 1n) <= n) x += 1n;
-      return x;
-    }
+    if (y >= x) return x;
     x = y;
   }
 }

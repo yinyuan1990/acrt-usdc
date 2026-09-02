@@ -172,6 +172,45 @@ try {
   log("indexer trades", { count: trades.length, sides: trades.map((t) => t.side) });
   if (trades.length < 3) throw new Error("expected initial buy + buy + sell in indexer");
 
+  // 5b) wallet-signed comment + like
+  await clickByText(/^thread$/i);
+  await sleep(800);
+  await page.type("textarea", `gm from e2e ${sym} 🚀`);
+  await clickByText(/post a reply/i);
+  await waitText(/gm from e2e/i, 30_000);
+  log("comment posted (signed)");
+  await sleep(1200);
+  const likeBtn = (await page.$$("button")).find(async () => false); // placeholder to keep types simple
+  void likeBtn;
+  const hearts = await page.$$('button:has(svg.lucide-heart)');
+  if (hearts.length) {
+    await hearts[hearts.length - 1].click();
+    await sleep(2500);
+    log("like toggled (signed)");
+  }
+  const comments = await fetch(`${BASE}/api/tokens/${tokenAddr}/comments`).then((r) => r.json());
+  if (!comments.length || !comments[0].isCreator) throw new Error("comment missing or not flagged as creator");
+  log("indexer comments", { count: comments.length, likes: comments[0].likes });
+  await shot("05b-thread");
+
+  // 5c) logo upload API (1×1 PNG)
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+  const fd = new FormData();
+  fd.append("file", new Blob([png], { type: "image/png" }), "logo.png");
+  const up = await fetch(`${BASE}/api/upload`, { method: "POST", body: fd }).then((r) => r.json());
+  if (!up.url) throw new Error("upload failed: " + JSON.stringify(up));
+  const served = await fetch(up.url);
+  if (served.status !== 200 || served.headers.get("content-type") !== "image/png") throw new Error("uploaded logo not served");
+  log("logo upload + serve ok", { url: up.url });
+
+  // 5d) burn dashboard shows buybacks
+  await page.goto(`${BASE}/burn?lang=en`, { waitUntil: "domcontentloaded" });
+  await sleep(3500);
+  const tr = await fetch(`${BASE}/api/treasury`).then((r) => r.json());
+  log("treasury", { burns: tr.burns.length, burned: Number(tr.totalBurned) / 1e18, platform: tr.platformToken?.symbol });
+  if (tr.burns.length > 0) await waitText(/ARCL/i, 20_000);
+  await shot("05d-burn");
+
   // 6) creator page
   await page.goto(`${BASE}/creator?lang=en`, { waitUntil: "domcontentloaded" });
   await sleep(3500);

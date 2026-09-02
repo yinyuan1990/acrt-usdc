@@ -2,7 +2,7 @@ import { getAddress, parseEventLogs, type Address, type Log } from "viem";
 import { client, ADDR } from "./chain.js";
 import { config } from "./config.js";
 import { sql, getSync, setSync } from "./db.js";
-import { factoryAbi, lockerAbi, poolAbi, tokenAbi } from "./abi.js";
+import { factoryAbi, lockerAbi, poolAbi, tokenAbi, treasuryAbi } from "./abi.js";
 import { mcapFromSqrtPriceX96, priceUsdFromMcap6 } from "./price.js";
 import { bus } from "./bus.js";
 
@@ -142,6 +142,16 @@ async function onPayoutChanged(args: { token: Address; newPayout: Address }) {
   if (t) t.payout = getAddress(args.newPayout);
 }
 
+async function onExecuted(log: Log, args: { usdcSpent: bigint; tokensBurned: bigint; usdcToEco: bigint }) {
+  const ts = await tsOf(log.blockNumber!);
+  const ins = await sql`insert into burns (tx_hash, block_number, ts, usdc_spent, tokens_burned, usdc_to_eco)
+    values (${log.transactionHash!}, ${Number(log.blockNumber)}, ${ts}, ${args.usdcSpent.toString()}, ${args.tokensBurned.toString()}, ${args.usdcToEco.toString()})
+    on conflict (tx_hash) do nothing returning id`;
+  if (ins.length === 0) return;
+  bus.emit("ws", { type: "burn", data: { tx: log.transactionHash, usdcSpent: args.usdcSpent.toString(), tokensBurned: args.tokensBurned.toString(), ts } });
+  console.log(`[burn] spent ${args.usdcSpent} usdc → burned ${args.tokensBurned}`);
+}
+
 async function onClaimed(log: Log, args: { account: Address; asset: Address; amount: bigint }) {
   const ts = await tsOf(log.blockNumber!);
   await sql`insert into claims (account, asset, amount, tx_hash, ts) values (${getAddress(args.account)}, ${getAddress(args.asset)}, ${args.amount.toString()}, ${log.transactionHash!}, ${ts})
@@ -155,15 +165,17 @@ type Typed = { log: Log; kind: string; args: unknown };
 async function processRange(from: bigint, to: bigint) {
   // 1) protocol contracts (fixed addresses). Register launches first so their pools/tokens are known
   //    for the same range (the launch tx's own Swap has a lower logIndex than TokenLaunched).
-  const protoLogs = await client.getLogs({ address: [ADDR.factory, ADDR.locker], fromBlock: from, toBlock: to });
-  const fLogs = parseEventLogs({ abi: factoryAbi, logs: protoLogs, strict: false });
-  const lLogs = parseEventLogs({ abi: lockerAbi, logs: protoLogs, strict: false });
+  const protoLogs = await client.getLogs({ address: [ADDR.factory, ADDR.locker, ADDR.treasury], fromBlock: from, toBlock: to });
+  const fLogs = parseEventLogs({ abi: factoryAbi, logs: protoLogs.filter((l) => l.address.toLowerCase() === ADDR.factory.toLowerCase()), strict: false });
+  const lLogs = parseEventLogs({ abi: lockerAbi, logs: protoLogs.filter((l) => l.address.toLowerCase() === ADDR.locker.toLowerCase()), strict: false });
+  const tLogs = parseEventLogs({ abi: treasuryAbi, logs: protoLogs.filter((l) => l.address.toLowerCase() === ADDR.treasury.toLowerCase()), strict: false });
   for (const l of fLogs) if (l.eventName === "TokenLaunched") await onTokenLaunched(l, l.args as never);
 
   // 2) gather every other event and replay strictly in chain order so counters like
   //    volume_since_distribute are reset/accumulated exactly as they happened onchain.
   const all: Typed[] = [];
   for (const l of fLogs) if (l.eventName === "Graduated") all.push({ log: l, kind: "graduated", args: l.args });
+  for (const l of tLogs) if (l.eventName === "Executed") all.push({ log: l, kind: "executed", args: l.args });
   for (const l of lLogs) if (l.eventName === "FeesDistributed" || l.eventName === "PayoutChanged" || l.eventName === "Claimed") all.push({ log: l, kind: l.eventName, args: l.args });
 
   const pools = [...poolToToken.keys()] as Address[];
@@ -184,6 +196,7 @@ async function processRange(from: bigint, to: bigint) {
       case "transfer": await onTransfer(log, args as never); break;
       case "FeesDistributed": await onFees(log, args as never); break;
       case "graduated": await onGraduated(log, args as never); break;
+      case "executed": await onExecuted(log, args as never); break;
       case "PayoutChanged": await onPayoutChanged(args as never); break;
       case "Claimed": await onClaimed(log, args as never); break;
     }
