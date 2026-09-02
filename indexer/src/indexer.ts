@@ -150,33 +150,43 @@ async function onClaimed(log: Log, args: { account: Address; asset: Address; amo
 
 // ------------------------------------------------------------------ range processing
 
+type Typed = { log: Log; kind: string; args: unknown };
+
 async function processRange(from: bigint, to: bigint) {
-  // 1) protocol contracts (fixed addresses)
+  // 1) protocol contracts (fixed addresses). Register launches first so their pools/tokens are known
+  //    for the same range (the launch tx's own Swap has a lower logIndex than TokenLaunched).
   const protoLogs = await client.getLogs({ address: [ADDR.factory, ADDR.locker], fromBlock: from, toBlock: to });
   const fLogs = parseEventLogs({ abi: factoryAbi, logs: protoLogs, strict: false });
   const lLogs = parseEventLogs({ abi: lockerAbi, logs: protoLogs, strict: false });
-
   for (const l of fLogs) if (l.eventName === "TokenLaunched") await onTokenLaunched(l, l.args as never);
 
-  // 2) pools & tokens now known (including ones launched inside this range)
+  // 2) gather every other event and replay strictly in chain order so counters like
+  //    volume_since_distribute are reset/accumulated exactly as they happened onchain.
+  const all: Typed[] = [];
+  for (const l of fLogs) if (l.eventName === "Graduated") all.push({ log: l, kind: "graduated", args: l.args });
+  for (const l of lLogs) if (l.eventName === "FeesDistributed" || l.eventName === "PayoutChanged" || l.eventName === "Claimed") all.push({ log: l, kind: l.eventName, args: l.args });
+
   const pools = [...poolToToken.keys()] as Address[];
   const toks = [...tokens.keys()] as Address[];
   if (pools.length) {
     const swapLogs = await client.getLogs({ address: pools, event: poolAbi[0], fromBlock: from, toBlock: to });
-    for (const l of swapLogs) await onSwap(l, l.args as never);
+    for (const l of swapLogs) all.push({ log: l, kind: "swap", args: l.args });
   }
   if (toks.length) {
     const xfer = await client.getLogs({ address: toks, event: tokenAbi[5], fromBlock: from, toBlock: to });
-    xfer.sort((a, b) => (a.blockNumber === b.blockNumber ? Number(a.logIndex! - b.logIndex!) : Number(a.blockNumber! - b.blockNumber!)));
-    for (const l of xfer) await onTransfer(l, l.args as never);
+    for (const l of xfer) all.push({ log: l, kind: "transfer", args: l.args });
   }
+  all.sort((a, b) => (a.log.blockNumber === b.log.blockNumber ? Number(a.log.logIndex! - b.log.logIndex!) : Number(a.log.blockNumber! - b.log.blockNumber!)));
 
-  // 3) remaining protocol events
-  for (const l of fLogs) if (l.eventName === "Graduated") await onGraduated(l, l.args as never);
-  for (const l of lLogs) {
-    if (l.eventName === "FeesDistributed") await onFees(l, l.args as never);
-    else if (l.eventName === "PayoutChanged") await onPayoutChanged(l.args as never);
-    else if (l.eventName === "Claimed") await onClaimed(l, l.args as never);
+  for (const { log, kind, args } of all) {
+    switch (kind) {
+      case "swap": await onSwap(log, args as never); break;
+      case "transfer": await onTransfer(log, args as never); break;
+      case "FeesDistributed": await onFees(log, args as never); break;
+      case "graduated": await onGraduated(log, args as never); break;
+      case "PayoutChanged": await onPayoutChanged(args as never); break;
+      case "Claimed": await onClaimed(log, args as never); break;
+    }
   }
 }
 

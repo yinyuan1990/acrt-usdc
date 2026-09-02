@@ -18,6 +18,7 @@ const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args.splice(i, 
 const services = (flag("--services") ?? "web,indexer").split(",").filter(Boolean);
 const withNginx = args.includes("--nginx");
 const noBuild = args.includes("--no-build");
+const resetDb = args.includes("--reset-db"); // wipe indexer DB → full re-index from deploy block
 
 const host = process.env.SRV_HOST ?? "45.205.18.104";
 const username = process.env.SRV_USER ?? "root";
@@ -62,6 +63,7 @@ conn.on("ready", async () => {
 cd /opt/arclaunch
 set -a; . ./.env; set +a
 ${noBuild ? "" : `docker compose build ${list} 2>&1 | grep -E 'Built|ERROR|error' || true`}
+${resetDb ? `docker compose stop indexer db && docker compose rm -f indexer db && docker volume rm -f arclaunch_pgdata && echo "db reset"` : ""}
 docker compose up -d --remove-orphans db ${list}
 sleep 3
 for i in $(seq 1 40); do

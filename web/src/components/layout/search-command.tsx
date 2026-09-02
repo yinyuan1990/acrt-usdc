@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Flame, Plus, Rocket, Search, Trophy } from "lucide-react";
-import { TOKENS } from "@/lib/mock";
+import { useTokens } from "@/lib/api";
 import { fmtUsd, shortAddr } from "@/lib/format";
 import { useApp } from "@/components/providers";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ export function SearchCommand({ className }: { className?: string }) {
   const { t } = useApp();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const tokens = useTokens("volume", "all").data ?? [];
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -46,9 +47,9 @@ export function SearchCommand({ className }: { className?: string }) {
           <CommandList>
             <CommandEmpty>{t("search.empty")}</CommandEmpty>
             <CommandGroup heading={t("search.tokens")}>
-              {TOKENS.map((tok) => (
+              {tokens.map((tok) => (
                 <CommandItem key={tok.address} value={`${tok.name} ${tok.symbol} ${tok.address}`} onSelect={() => go(`/token/${tok.address}`)}>
-                  <TokenAvatar emoji={tok.emoji} hue={tok.hue} size={24} className="rounded-md" />
+                  <TokenAvatar logo={tok.logo} symbol={tok.symbol} seed={tok.address} size={24} className="rounded-md" />
                   <span className="font-medium">{tok.name}</span>
                   <span className="font-mono text-xs text-muted-foreground">${tok.symbol}</span>
                   <span className="font-mono text-[11px] text-muted-foreground">{shortAddr(tok.address, 6, 4)}</span>

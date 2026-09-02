@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ACTIVITY, TOKENS } from "@/lib/mock";
+import { useActivity, useTokens, usd } from "@/lib/api";
 import { fmtUsd, shortAddr } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/components/providers";
-import { PctChange, TokenAvatar } from "@/components/shared";
+import { PctChange, TokenAvatar, WalletDot } from "@/components/shared";
 
 /**
  * Two-row live strip, pump.fun style:
@@ -14,24 +14,22 @@ import { PctChange, TokenAvatar } from "@/components/shared";
  */
 export function Ticker() {
   const { t } = useApp();
-  const top = [...TOKENS].sort((a, b) => b.volume24h - a.volume24h).slice(0, 12);
+  const activity = useActivity().data ?? [];
+  const top = useTokens("volume", "all").data ?? [];
 
   const activityRow = (k: string) => (
     <div key={k} className="flex shrink-0 items-center">
-      {ACTIVITY.map((a) => (
-        <Link key={k + a.id} href={`/token/${a.token.address}`} className="flex items-center gap-2 border-r px-3 py-1.5 text-xs hover:bg-accent">
-          <span
-            className="size-4 shrink-0 rounded-full"
-            style={{ background: `linear-gradient(135deg, hsl(${parseInt(a.wallet.slice(2, 5), 16) % 360} 70% 50%), hsl(${parseInt(a.wallet.slice(5, 8), 16) % 360} 70% 35%))` }}
-          />
+      {activity.map((a, i) => (
+        <Link key={k + a.tx + i} href={`/token/${a.token}`} className="flex items-center gap-2 border-r px-3 py-1.5 text-xs hover:bg-accent">
+          <WalletDot address={a.wallet} />
           <span className="font-mono text-muted-foreground">{shortAddr(a.wallet, 4, 3)}</span>
           <span className={cn("font-medium", a.kind === "buy" ? "text-up" : a.kind === "sell" ? "text-down" : "text-gold")}>
             {a.kind === "buy" ? t("activity.bought") : a.kind === "sell" ? t("activity.sold") : t("activity.launched")}
           </span>
-          {a.usdc !== undefined && <span className="font-mono tabular">{fmtUsd(a.usdc)}</span>}
+          {a.usdc !== undefined && <span className="font-mono tabular">{fmtUsd(usd(a.usdc))}</span>}
           {a.usdc !== undefined && <span className="text-muted-foreground">{t("activity.of")}</span>}
-          <TokenAvatar emoji={a.token.emoji} hue={a.token.hue} size={16} className="rounded-sm" />
-          <span className="font-semibold">{a.token.symbol}</span>
+          <TokenAvatar logo={a.logo} symbol={a.symbol} seed={a.token} size={16} className="rounded-sm" />
+          <span className="font-semibold">{a.symbol}</span>
         </Link>
       ))}
     </div>
@@ -39,9 +37,9 @@ export function Ticker() {
 
   const priceRow = (k: string) => (
     <div key={k} className="flex shrink-0 items-center">
-      {top.map((tok) => (
+      {top.slice(0, 12).map((tok) => (
         <Link key={k + tok.address} href={`/token/${tok.address}`} className="flex items-center gap-2 border-r px-4 py-1 text-[11px] hover:bg-accent">
-          <span>{tok.emoji}</span>
+          <TokenAvatar logo={tok.logo} symbol={tok.symbol} seed={tok.address} size={14} className="rounded-sm" />
           <span className="font-semibold">{tok.symbol}</span>
           <span className="font-mono text-secondary-foreground tabular">{fmtUsd(tok.price)}</span>
           <PctChange value={tok.change24h} className="text-[11px]" />
@@ -49,6 +47,8 @@ export function Ticker() {
       ))}
     </div>
   );
+
+  const empty = activity.length === 0 && top.length === 0;
 
   return (
     <div className="border-t bg-sidebar/60">
@@ -58,12 +58,18 @@ export function Ticker() {
           {t("common.live")}
         </div>
         <div className="no-scrollbar flex-1 overflow-hidden">
-          <div className="marquee [animation-duration:90s]">{[activityRow("a"), activityRow("b")]}</div>
+          {empty ? (
+            <div className="px-3 py-1.5 text-xs text-muted-foreground">{t("common.noData")}</div>
+          ) : (
+            <div className={cn("marquee [animation-duration:90s]", activity.length < 8 && "[animation-duration:40s]")}>{[activityRow("a"), activityRow("b")]}</div>
+          )}
         </div>
       </div>
-      <div className="no-scrollbar hidden overflow-hidden md:block">
-        <div className="marquee">{[priceRow("a"), priceRow("b")]}</div>
-      </div>
+      {top.length > 0 && (
+        <div className="no-scrollbar hidden overflow-hidden md:block">
+          <div className="marquee">{[priceRow("a"), priceRow("b")]}</div>
+        </div>
+      )}
     </div>
   );
 }

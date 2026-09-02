@@ -2,8 +2,9 @@
 
 import { useEffect, useRef } from "react";
 import { CandlestickSeries, HistogramSeries, createChart, type IChartApi } from "lightweight-charts";
-import type { Candle } from "@/lib/mock";
 import { useApp } from "@/components/providers";
+
+export type Candle = { time: number; open: number; high: number; low: number; close: number; volume: number };
 
 function cssVar(name: string) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();

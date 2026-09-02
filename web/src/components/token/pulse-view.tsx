@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { GraduationCap, Rocket, Zap } from "lucide-react";
-import type { Token } from "@/lib/mock";
-import { GRADUATION_THRESHOLD, SUPPLY } from "@/lib/mock";
+import { progressOf, usd, type TokenView } from "@/lib/api";
 import { fmtNum, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/components/providers";
@@ -13,11 +12,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { PctChange, TimeAgo, TokenAvatar } from "@/components/shared";
 
 /** Axiom / Photon style three-column live board: New · About to graduate · Graduated. */
-export function PulseView({ tokens }: { tokens: Token[] }) {
+export function PulseView({ tokens }: { tokens: TokenView[] }) {
   const { t } = useApp();
-  const fresh = [...tokens].filter((x) => !x.graduated).sort((a, b) => b.createdAt - a.createdAt);
-  const climbing = [...tokens].filter((x) => !x.graduated && x.pairedUsdc / GRADUATION_THRESHOLD > 0.3).sort((a, b) => b.pairedUsdc - a.pairedUsdc);
-  const graduated = [...tokens].filter((x) => x.graduated).sort((a, b) => b.volume24h - a.volume24h);
+  const fresh = [...tokens].filter((x) => !x.graduated).sort((a, b) => new Date(b.launchTs).getTime() - new Date(a.launchTs).getTime());
+  const climbing = [...tokens].filter((x) => !x.graduated && progressOf(x) >= 30).sort((a, b) => progressOf(b) - progressOf(a));
+  const graduated = [...tokens].filter((x) => x.graduated).sort((a, b) => usd(b.volume24hUsdc) - usd(a.volume24hUsdc));
 
   return (
     <div className="grid gap-3 lg:grid-cols-3">
@@ -28,7 +27,8 @@ export function PulseView({ tokens }: { tokens: Token[] }) {
   );
 }
 
-function Column({ title, icon, tone, tokens }: { title: string; icon: React.ReactNode; tone: string; tokens: Token[] }) {
+function Column({ title, icon, tone, tokens }: { title: string; icon: React.ReactNode; tone: string; tokens: TokenView[] }) {
+  const { t } = useApp();
   return (
     <Card className="gap-0 py-0">
       <div className={cn("flex items-center gap-2 border-b px-3 py-2 text-xs font-semibold", tone)}>
@@ -36,42 +36,46 @@ function Column({ title, icon, tone, tokens }: { title: string; icon: React.Reac
         <span className="ml-auto font-mono text-[11px] text-muted-foreground">{tokens.length}</span>
       </div>
       <ScrollArea className="h-[560px]">
-        <div className="divide-y">
-          {tokens.map((tok) => (
-            <Row key={tok.address} token={tok} />
-          ))}
-        </div>
+        {tokens.length === 0 ? (
+          <div className="p-6 text-center text-xs text-muted-foreground">{t("common.noData")}</div>
+        ) : (
+          <div className="divide-y">
+            {tokens.map((tok) => (
+              <Row key={tok.address} token={tok} />
+            ))}
+          </div>
+        )}
       </ScrollArea>
     </Card>
   );
 }
 
-function Row({ token }: { token: Token }) {
+function Row({ token }: { token: TokenView }) {
   const { t } = useApp();
-  const progress = Math.min(100, (token.pairedUsdc / GRADUATION_THRESHOLD) * 100);
+  const progress = progressOf(token);
   return (
     <Link href={`/token/${token.address}`} className="flex gap-2.5 px-3 py-2.5 text-xs hover:bg-accent">
-      <TokenAvatar emoji={token.emoji} hue={token.hue} size={36} />
+      <TokenAvatar logo={token.logo} symbol={token.symbol} seed={token.address} size={36} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate font-semibold">{token.symbol}</span>
           <span className="truncate text-muted-foreground">{token.name}</span>
           <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-            <TimeAgo ts={token.createdAt} />
+            <TimeAgo ts={token.launchTs} />
           </span>
         </div>
         <div className="mt-0.5 flex items-center gap-3 font-mono text-[11px] tabular">
           <span>
             <span className="text-muted-foreground">MC </span>
-            {fmtUsd(token.price * SUPPLY, { compact: true })}
+            {fmtUsd(token.mcapUsd, { compact: true })}
           </span>
           <span>
             <span className="text-muted-foreground">V </span>
-            {fmtUsd(token.volume24h, { compact: true })}
+            {fmtUsd(usd(token.volume24hUsdc), { compact: true })}
           </span>
           <span>
             <span className="text-muted-foreground">H </span>
-            {fmtNum(token.holders)}
+            {fmtNum(token.holders ?? 0)}
           </span>
           <PctChange value={token.change24h} className="ml-auto" />
         </div>

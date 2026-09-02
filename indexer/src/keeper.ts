@@ -21,7 +21,7 @@ export async function startKeeper() {
   }
 }
 
-async function tick(wallet: ReturnType<typeof keeperWallet>["wallet"], me: Address) {
+async function tick(wallet: ReturnType<typeof keeperWallet>["wallet"], _me: Address) {
   const rows = await sql<{ address: string; volume_since_distribute: string; last_distributed_at: Date | null; launch_ts: Date; graduated: boolean; paired_usdc: string; graduation_threshold: string }[]>`
     select address, volume_since_distribute, last_distributed_at, launch_ts, graduated, paired_usdc, graduation_threshold from tokens`;
   const now = Date.now();
@@ -31,13 +31,14 @@ async function tick(wallet: ReturnType<typeof keeperWallet>["wallet"], me: Addre
     const since = (t.last_distributed_at ?? t.launch_ts).getTime();
     const stale = now - since >= config.keeper.maxAgeMs;
     if (vol > 0n && (estFee >= config.keeper.feeThresholdUsdc || stale)) {
-      const hash = await wallet.writeContract({ address: ADDR.locker, abi: lockerAbi, functionName: "distribute", args: [t.address as Address], account: me, chain: wallet.chain });
+      // wallet client is bound to the local private-key account → signs locally, no eth_sendTransaction
+      const hash = await wallet.writeContract({ address: ADDR.locker, abi: lockerAbi, functionName: "distribute", args: [t.address as Address], chain: wallet.chain, account: wallet.account! });
       const rc = await client.waitForTransactionReceipt({ hash });
       console.log(`[keeper] distribute ${t.address} estFee=${estFee} → ${rc.status} ${hash}`);
     }
     // Persist graduation once the pool crosses the threshold (emits Graduated for the indexer).
     if (!t.graduated && BigInt(t.paired_usdc) >= BigInt(t.graduation_threshold) && BigInt(t.graduation_threshold) > 0n) {
-      const hash = await wallet.writeContract({ address: ADDR.factory, abi: factoryAbi, functionName: "markGraduated", args: [t.address as Address], account: me, chain: wallet.chain });
+      const hash = await wallet.writeContract({ address: ADDR.factory, abi: factoryAbi, functionName: "markGraduated", args: [t.address as Address], chain: wallet.chain, account: wallet.account! });
       const rc = await client.waitForTransactionReceipt({ hash });
       console.log(`[keeper] markGraduated ${t.address} → ${rc.status} ${hash}`);
     }

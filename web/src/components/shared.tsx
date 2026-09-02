@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -35,28 +35,54 @@ export function Stat({
   );
 }
 
-export function TokenAvatar({ emoji, hue, size = 40, className }: { emoji: string; hue: number; size?: number; className?: string }) {
+/** Deterministic hue from an address so fallbacks stay stable. */
+export function hueOf(seed: string): number {
+  let h = 0;
+  for (let i = 2; i < Math.min(seed.length, 14); i++) h = (h * 31 + seed.charCodeAt(i)) % 360;
+  return h;
+}
+
+/** Token avatar: on-chain logo URL if it loads, otherwise a gradient tile with the symbol's first letters. */
+export function TokenAvatar({ logo, symbol, seed, size = 40, className }: { logo?: string; symbol: string; seed: string; size?: number; className?: string }) {
+  const [broken, setBroken] = useState(false);
+  const hue = hueOf(seed);
+  const showImg = !!logo && /^https?:\/\//.test(logo) && !broken;
+  // "emoji:🚀" is the no-upload path used by the create form.
+  const emoji = logo?.startsWith("emoji:") ? logo.slice(6) : null;
   return (
     <div
-      className={cn("flex shrink-0 items-center justify-center rounded-lg select-none", className)}
+      className={cn("flex shrink-0 items-center justify-center overflow-hidden rounded-lg font-bold text-white select-none", className)}
       style={{
         width: size,
         height: size,
-        fontSize: size * 0.5,
-        background: `linear-gradient(135deg, hsl(${hue} 70% 45%), hsl(${(hue + 40) % 360} 70% 30%))`,
+        fontSize: emoji ? size * 0.5 : size * 0.36,
+        background: showImg ? undefined : `linear-gradient(135deg, hsl(${hue} 70% 45%), hsl(${(hue + 40) % 360} 70% 30%))`,
         boxShadow: "inset 0 1px 0 rgba(255,255,255,.2)",
       }}
     >
-      {emoji}
+      {showImg ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={logo} alt={symbol} width={size} height={size} className="size-full object-cover" onError={() => setBroken(true)} />
+      ) : (
+        emoji ?? symbol.slice(0, 2).toUpperCase()
+      )}
     </div>
   );
 }
 
-export function TimeAgo({ ts, className }: { ts: number; className?: string }) {
+/** Small circular identicon for wallets. */
+export function WalletDot({ address, size = 16, className }: { address: string; size?: number; className?: string }) {
+  const h1 = hueOf(address);
+  const h2 = (h1 + 90) % 360;
+  return <span className={cn("inline-block shrink-0 rounded-full", className)} style={{ width: size, height: size, background: `linear-gradient(135deg, hsl(${h1} 70% 50%), hsl(${h2} 70% 35%))` }} />;
+}
+
+export function TimeAgo({ ts, className }: { ts: number | string; className?: string }) {
   const now = useSyncExternalStore(clockStore.subscribe, clockStore.get, clockStore.getServer);
+  const ms = typeof ts === "string" ? new Date(ts).getTime() : ts;
   return (
     <span className={cn("tabular", className)} suppressHydrationWarning>
-      {now === null ? "…" : timeAgo(ts, now)}
+      {now === null ? "…" : timeAgo(ms, now)}
     </span>
   );
 }
@@ -81,7 +107,8 @@ export function Addr({ value, head = 6, tail = 4, className }: { value: string; 
   );
 }
 
-export function PctChange({ value, className }: { value: number; className?: string }) {
+export function PctChange({ value, className }: { value: number | null | undefined; className?: string }) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return <span className={cn("font-mono text-muted-foreground", className)}>—</span>;
   const up = value >= 0;
   return (
     <span className={cn("font-mono tabular", up ? "text-up" : "text-down", className)}>
@@ -106,4 +133,11 @@ export function Empty({ children }: { children: React.ReactNode }) {
       <CardContent className="flex items-center justify-center py-8 text-sm text-muted-foreground">{children}</CardContent>
     </Card>
   );
+}
+
+/** Wraps a wagmi/viem error into a short toast-friendly message. */
+export function errMsg(e: unknown): string {
+  const m = (e as { shortMessage?: string; message?: string }) ?? {};
+  const s = m.shortMessage ?? m.message ?? String(e);
+  return s.split("\n")[0].slice(0, 160);
 }

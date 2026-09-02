@@ -48,7 +48,8 @@ page.on("response", async (r) => {
   }
 });
 
-await page.goto("https://faucet.circle.com/", { waitUntil: "networkidle2", timeout: 90000 });
+await page.goto("https://faucet.circle.com/", { waitUntil: "domcontentloaded", timeout: 90000 });
+await page.waitForSelector("input[name=address]", { timeout: 90000 });
 // Look human for the v3 scorer: linger, move the mouse, scroll a bit.
 await new Promise((r) => setTimeout(r, 4000));
 for (let i = 0; i < 12; i++) {

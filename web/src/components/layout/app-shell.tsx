@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { BookOpen, Compass, Flame, Languages, Palette, Plus, Rocket, Trophy, User, Wallet, Zap } from "lucide-react";
 import { useApp } from "@/components/providers";
 import { cn } from "@/lib/utils";
+import { shortAddr } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SearchCommand } from "@/components/layout/search-command";
@@ -28,7 +29,9 @@ function isActive(pathname: string, href: string) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { t, theme, setTheme, locale, setLocale, connected, toggleConnect } = useApp();
+  const { t, theme, setTheme, locale, setLocale, connected, address, wrongChain, toggleConnect } = useApp();
+  const walletLabel = wrongChain ? t("wallet.switch") : connected && address ? shortAddr(address, 6, 4) : t("common.connect");
+  const walletLabelShort = wrongChain ? t("wallet.switch") : connected && address ? shortAddr(address, 4, 3) : t("common.connect");
 
   return (
     <TooltipProvider>
@@ -63,9 +66,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Tabs>
             <div className="flex items-center justify-between text-[11px] text-muted-foreground">
               <span className="inline-flex items-center gap-1">
-                <Zap size={12} className="text-primary" /> Arc · {t("common.finality")}
+                <Zap size={12} className="text-primary" /> Arc {t("common.testnet")} · {t("common.finality")}
               </span>
-              <span>{t("common.usdcSettled")}</span>
+              <a href="https://faucet.circle.com" target="_blank" rel="noreferrer" className="hover:text-foreground hover:underline">
+                {t("tx.faucet")}
+              </a>
             </div>
           </div>
         </aside>
@@ -109,10 +114,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <BookOpen /> {t("nav.docs")}
                   </a>
                 </Button>
-                <Button size="sm" variant={connected ? "outline" : "glow"} onClick={toggleConnect} className="h-9">
+                <Button size="sm" variant={wrongChain ? "gold" : connected ? "outline" : "glow"} onClick={toggleConnect} className="h-9" title={connected && !wrongChain ? t("wallet.disconnect") : undefined}>
                   <Wallet />
-                  <span className="hidden sm:inline">{connected ? "0x7a3f…c21e" : t("common.connect")}</span>
-                  <span className="sm:hidden">{connected ? "0x7a…1e" : t("common.connect")}</span>
+                  <span className="hidden font-mono sm:inline">{walletLabel}</span>
+                  <span className="font-mono sm:hidden">{walletLabelShort}</span>
                 </Button>
               </div>
             </div>

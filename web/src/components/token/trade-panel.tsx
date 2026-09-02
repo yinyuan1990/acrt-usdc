@@ -1,11 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Info, Lock, Settings2, ShieldCheck } from "lucide-react";
-import { toast } from "sonner";
-import type { Token } from "@/lib/mock";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { usePublicClient, useReadContract } from "wagmi";
+import { formatUnits, maxUint256, parseUnits, type Address } from "viem";
+import type { TokenView } from "@/lib/api";
 import { fmtNum, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { ADDR, POOL_FEE, erc20Abi, quoterAbi, routerAbi } from "@/lib/web3";
+import { useTx } from "@/lib/tx";
 import { useApp } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,63 +19,134 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TokenAvatar } from "@/components/shared";
 
-const QUICK_USDC = [10, 50, 100, 500];
+const QUICK_USDC = [1, 5, 10, 50];
 const QUICK_PCT = [25, 50, 75, 100];
-
 type Side = "buy" | "sell";
 
-/** Uniswap-style severity buckets for price impact. */
 function impactTone(pct: number) {
   if (pct >= 10) return "text-down";
   if (pct >= 5) return "text-gold";
   return "";
 }
 
-export function TradePanel({ token, className, bare }: { token: Token; className?: string; bare?: boolean }) {
-  const { t, connected, toggleConnect } = useApp();
+export function TradePanel({ token, className, bare }: { token: TokenView; className?: string; bare?: boolean }) {
+  const { t, connected, address, wrongChain, toggleConnect } = useApp();
+  const { run } = useTx();
+  const client = usePublicClient();
+  const qc = useQueryClient();
   const [side, setSide] = useState<Side>("buy");
   const [amount, setAmount] = useState("");
   const [slippage, setSlippage] = useState(2);
   const [review, setReview] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const usdcBalance = 1_240.55;
-  const tokenBalance = 4_820_000;
+  const tokenAddr = token.address as Address;
+  const me = address as Address | undefined;
 
-  const num = parseFloat(amount) || 0;
-  const quote = useMemo(() => {
-    // Simplified constant-product estimate for UI only.
-    const pooledUsdc = Math.max(token.pairedUsdc, 200);
-    const pooledTok = pooledUsdc / token.price;
-    const inNet = num * 0.99;
-    if (side === "buy") {
-      const out = pooledTok - (pooledUsdc * pooledTok) / (pooledUsdc + inNet);
-      return { out, impact: (inNet / (pooledUsdc + inNet)) * 100, fee: num * 0.01, rate: out > 0 ? num / out : token.price };
+  const usdcBal = useReadContract({ address: ADDR.usdc, abi: erc20Abi, functionName: "balanceOf", args: me ? [me] : undefined, query: { enabled: !!me, refetchInterval: 6000 } });
+  const tokBal = useReadContract({ address: tokenAddr, abi: erc20Abi, functionName: "balanceOf", args: me ? [me] : undefined, query: { enabled: !!me, refetchInterval: 6000 } });
+
+  const usdcBalance = usdcBal.data ?? 0n;
+  const tokenBalance = tokBal.data ?? 0n;
+
+  // parse input
+  const amountIn = useMemo(() => {
+    try {
+      if (!amount || Number(amount) <= 0) return 0n;
+      return side === "buy" ? parseUnits(amount, 6) : parseUnits(amount, 18);
+    } catch {
+      return 0n;
     }
-    const out = pooledUsdc - (pooledUsdc * pooledTok) / (pooledTok + inNet);
-    return { out, impact: (inNet / (pooledTok + inNet)) * 100, fee: out * 0.01, rate: num > 0 ? out / num : token.price };
-  }, [num, side, token]);
+  }, [amount, side]);
 
-  const minReceived = quote.out * (1 - slippage / 100);
-  const recvLabel = side === "buy" ? `${fmtNum(quote.out)} ${token.symbol}` : fmtUsd(quote.out);
-  const minLabel = side === "buy" ? `${fmtNum(minReceived)} ${token.symbol}` : fmtUsd(minReceived);
+  // debounce for quoting
+  const [debounced, setDebounced] = useState(0n);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(amountIn), 250);
+    return () => clearTimeout(id);
+  }, [amountIn]);
 
-  const confirm = () => {
-    setReview(false);
-    setAmount("");
-    toast.success(`${side === "buy" ? t("common.buy") : t("common.sell")} ${token.symbol}`, { description: `${side === "buy" ? fmtUsd(num) : fmtNum(num) + " " + token.symbol} → ${recvLabel}` });
+  const quote = useQuery({
+    queryKey: ["quote", token.address, side, debounced.toString()],
+    enabled: debounced > 0n && !!client,
+    refetchInterval: 6000,
+    queryFn: async () => {
+      const { result } = await client!.simulateContract({
+        address: ADDR.quoter,
+        abi: quoterAbi,
+        functionName: "quoteExactInputSingle",
+        args: [{ tokenIn: side === "buy" ? ADDR.usdc : tokenAddr, tokenOut: side === "buy" ? tokenAddr : ADDR.usdc, amountIn: debounced, fee: POOL_FEE, sqrtPriceLimitX96: 0n }],
+      });
+      return result[0] as bigint;
+    },
+  });
+
+  const out = quote.data ?? 0n;
+  const outNum = side === "buy" ? Number(formatUnits(out, 18)) : Number(formatUnits(out, 6));
+  const inNum = side === "buy" ? Number(formatUnits(amountIn, 6)) : Number(formatUnits(amountIn, 18));
+  const execPrice = outNum > 0 && inNum > 0 ? (side === "buy" ? inNum / outNum : outNum / inNum) : 0;
+  const impact = token.price > 0 && execPrice > 0 ? Math.max(0, (side === "buy" ? execPrice / token.price - 1 : 1 - execPrice / token.price) * 100) : 0;
+  const minOut = out - (out * BigInt(Math.round(slippage * 100))) / 10_000n;
+  const fee = side === "buy" ? inNum * 0.01 : outNum * 0.01;
+  const insufficient = side === "buy" ? amountIn > usdcBalance : amountIn > tokenBalance;
+
+  const recvLabel = side === "buy" ? `${fmtNum(outNum)} ${token.symbol}` : fmtUsd(outNum);
+  const minLabel = side === "buy" ? `${fmtNum(Number(formatUnits(minOut, 18)))} ${token.symbol}` : fmtUsd(Number(formatUnits(minOut, 6)));
+
+  const refresh = () => {
+    void usdcBal.refetch();
+    void tokBal.refetch();
+    void qc.invalidateQueries({ queryKey: ["token", token.address] });
+    void qc.invalidateQueries({ queryKey: ["trades", token.address] });
+    void qc.invalidateQueries({ queryKey: ["candles", token.address] });
+    void qc.invalidateQueries({ queryKey: ["holders", token.address] });
+    void qc.invalidateQueries({ queryKey: ["activity"] });
+    void qc.invalidateQueries({ queryKey: ["tokens"] });
+  };
+
+  const confirm = async () => {
+    if (!me || !client) return;
+    setBusy(true);
+    try {
+      const tokenIn = side === "buy" ? ADDR.usdc : tokenAddr;
+      const allowance = await client.readContract({ address: tokenIn, abi: erc20Abi, functionName: "allowance", args: [me, ADDR.router] });
+      if (allowance < amountIn) {
+        const rc = await run(t("tx.approving"), { address: tokenIn, abi: erc20Abi, functionName: "approve", args: [ADDR.router, maxUint256] });
+        if (!rc) return;
+      }
+      const label = `${side === "buy" ? t("common.buy") : t("common.sell")} ${token.symbol}`;
+      const rc = await run(label, {
+        address: ADDR.router,
+        abi: routerAbi,
+        functionName: "exactInputSingle",
+        args: [{
+          tokenIn,
+          tokenOut: side === "buy" ? tokenAddr : ADDR.usdc,
+          fee: POOL_FEE,
+          recipient: me,
+          deadline: BigInt(Math.floor(Date.now() / 1000) + 600),
+          amountIn,
+          amountOutMinimum: minOut,
+          sqrtPriceLimitX96: 0n,
+        }],
+      });
+      if (rc) {
+        setReview(false);
+        setAmount("");
+        setTimeout(refresh, 1500);
+      }
+    } finally {
+      setBusy(false);
+    }
   };
 
   const body = (
     <>
       <div className="flex items-center gap-2">
-        <Tabs value={side} onValueChange={(v) => setSide(v as Side)} className="flex-1">
+        <Tabs value={side} onValueChange={(v) => { setSide(v as Side); setAmount(""); }} className="flex-1">
           <TabsList className="h-10 w-full">
-            <TabsTrigger value="buy" className="font-semibold data-active:bg-up! data-active:text-black!">
-              {t("common.buy")}
-            </TabsTrigger>
-            <TabsTrigger value="sell" className="font-semibold data-active:bg-down! data-active:text-white!">
-              {t("common.sell")}
-            </TabsTrigger>
+            <TabsTrigger value="buy" className="font-semibold data-active:bg-up! data-active:text-black!">{t("common.buy")}</TabsTrigger>
+            <TabsTrigger value="sell" className="font-semibold data-active:bg-down! data-active:text-white!">{t("common.sell")}</TabsTrigger>
           </TabsList>
         </Tabs>
         <Popover>
@@ -88,9 +163,7 @@ export function TradePanel({ token, className, bare }: { token: Token; className
             </div>
             <div className="mt-2 grid grid-cols-4 gap-1">
               {[0.5, 1, 2, 5].map((s) => (
-                <Button key={s} size="xs" variant={slippage === s ? "default" : "outline"} className="font-mono" onClick={() => setSlippage(s)}>
-                  {s}%
-                </Button>
+                <Button key={s} size="xs" variant={slippage === s ? "default" : "outline"} className="font-mono" onClick={() => setSlippage(s)}>{s}%</Button>
               ))}
             </div>
             <p className="mt-2 text-[11px] text-muted-foreground">{t("token.slippageHint")}</p>
@@ -102,10 +175,10 @@ export function TradePanel({ token, className, bare }: { token: Token; className
         <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
           <span>{t("token.youPay")}</span>
           <span className="font-mono tabular">
-            {t("common.balance")}: {side === "buy" ? `${fmtNum(usdcBalance, 2)} USDC` : `${fmtNum(tokenBalance)} ${token.symbol}`}
+            {t("common.balance")}: {side === "buy" ? `${fmtNum(Number(formatUnits(usdcBalance, 6)), 2)} USDC` : `${fmtNum(Number(formatUnits(tokenBalance, 18)))} ${token.symbol}`}
           </span>
         </div>
-        <div className="flex items-center gap-2 rounded-lg border border-input bg-muted px-3 py-2 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
+        <div className={cn("flex items-center gap-2 rounded-lg border border-input bg-muted px-3 py-2 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30", insufficient && amountIn > 0n && "border-down")}>
           <input
             type="number"
             inputMode="decimal"
@@ -115,13 +188,19 @@ export function TradePanel({ token, className, bare }: { token: Token; className
             className="min-w-0 flex-1 bg-transparent font-mono text-xl outline-none tabular placeholder:text-muted-foreground"
           />
           <span className="flex items-center gap-1.5 rounded-md bg-accent px-2 py-1 font-mono text-xs">
-            {side === "buy" ? <span className="size-3.5 rounded-full bg-[#2775ca]" /> : <TokenAvatar emoji={token.emoji} hue={token.hue} size={14} className="rounded-sm" />}
+            {side === "buy" ? <span className="size-3.5 rounded-full bg-[#2775ca]" /> : <TokenAvatar logo={token.logo} symbol={token.symbol} seed={token.address} size={14} className="rounded-sm" />}
             {side === "buy" ? "USDC" : token.symbol}
           </span>
         </div>
         <div className="mt-2 grid grid-cols-4 gap-1.5">
           {(side === "buy" ? QUICK_USDC : QUICK_PCT).map((q) => (
-            <Button key={q} variant="outline" size="xs" className="font-mono" onClick={() => setAmount(side === "buy" ? String(q) : String(Math.floor((tokenBalance * q) / 100)))}>
+            <Button
+              key={q}
+              variant="outline"
+              size="xs"
+              className="font-mono"
+              onClick={() => setAmount(side === "buy" ? String(q) : formatUnits((tokenBalance * BigInt(q)) / 100n, 18))}
+            >
               {side === "buy" ? `$${q}` : `${q}%`}
             </Button>
           ))}
@@ -129,11 +208,12 @@ export function TradePanel({ token, className, bare }: { token: Token; className
       </div>
 
       <div className="mt-3 space-y-1.5 rounded-lg bg-muted p-3 text-xs">
-        <Row label={t("token.youReceive")} value={num ? recvLabel : "—"} strong />
-        <Row label={t("token.minReceived")} value={num ? minLabel : "—"} />
-        <Row label={t("token.priceImpact")} value={num ? `${quote.impact.toFixed(2)}%` : "—"} className={impactTone(quote.impact)} />
-        <Row label={`${t("common.fee")} (1%)`} value={num ? fmtUsd(quote.fee) : "—"} />
+        <Row label={t("token.youReceive")} value={amountIn > 0n ? (quote.isFetching && !quote.data ? "…" : recvLabel) : "—"} strong />
+        <Row label={t("token.minReceived")} value={amountIn > 0n && out > 0n ? minLabel : "—"} />
+        <Row label={t("token.priceImpact")} value={amountIn > 0n && out > 0n ? `${impact.toFixed(2)}%` : "—"} className={impactTone(impact)} />
+        <Row label={`${t("common.fee")} (1%)`} value={amountIn > 0n ? fmtUsd(fee) : "—"} />
         <Row label={t("common.slippage")} value={`${slippage}%`} />
+        {quote.isError && <div className="text-down">{t("tx.quoteFailed")}</div>}
       </div>
 
       {token.protectionActive && (
@@ -145,24 +225,19 @@ export function TradePanel({ token, className, bare }: { token: Token; className
 
       <Button
         size="xl"
-        variant={connected ? (side === "buy" ? "up" : "down") : "glow"}
+        variant={!connected || wrongChain ? "glow" : side === "buy" ? "up" : "down"}
         className="mt-4 w-full"
-        onClick={connected ? () => setReview(true) : toggleConnect}
-        disabled={connected && num <= 0}
+        onClick={!connected || wrongChain ? toggleConnect : () => setReview(true)}
+        disabled={connected && !wrongChain && (amountIn <= 0n || out <= 0n || insufficient || busy)}
       >
-        {connected ? `${t("token.review")}` : t("common.connect")}
+        {!connected ? t("common.connect") : wrongChain ? t("wallet.switch") : insufficient && amountIn > 0n ? t("tx.insufficient") : t("token.review")}
       </Button>
 
       <div className="mt-3 flex items-center justify-center gap-3 text-[11px] text-muted-foreground">
-        <span className="inline-flex items-center gap-1">
-          <Lock size={11} /> {t("token.lpLocked")}
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <Info size={11} /> {t("common.finality")}
-        </span>
+        <span className="inline-flex items-center gap-1"><Lock size={11} /> {t("token.lpLocked")}</span>
+        <span className="inline-flex items-center gap-1"><Info size={11} /> {t("common.finality")}</span>
       </div>
 
-      {/* Review dialog (Uniswap pattern: quote summary → confirm) */}
       <Dialog open={review} onOpenChange={setReview}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -175,34 +250,34 @@ export function TradePanel({ token, className, bare }: { token: Token; className
             <div className="rounded-lg bg-muted p-3">
               <div className="text-[11px] text-muted-foreground">{t("token.youPay")}</div>
               <div className="mt-1 flex items-center justify-between">
-                <span className="font-mono text-xl font-semibold tabular">{side === "buy" ? fmtUsd(num) : fmtNum(num)}</span>
+                <span className="font-mono text-xl font-semibold tabular">{side === "buy" ? fmtUsd(inNum) : fmtNum(inNum)}</span>
                 <span className="font-mono text-sm">{side === "buy" ? "USDC" : token.symbol}</span>
               </div>
             </div>
             <div className="rounded-lg bg-muted p-3">
               <div className="text-[11px] text-muted-foreground">{t("token.youReceive")}</div>
               <div className="mt-1 flex items-center justify-between">
-                <span className="font-mono text-xl font-semibold tabular">{side === "buy" ? fmtNum(quote.out) : fmtUsd(quote.out)}</span>
+                <span className="font-mono text-xl font-semibold tabular">{side === "buy" ? fmtNum(outNum) : fmtUsd(outNum)}</span>
                 <span className="font-mono text-sm">{side === "buy" ? token.symbol : "USDC"}</span>
               </div>
             </div>
             <Separator className="my-1" />
             <div className="space-y-1.5 text-xs">
-              <Row label={t("token.rate")} value={`1 ${token.symbol} = ${fmtUsd(quote.rate)}`} />
+              <Row label={t("token.rate")} value={`1 ${token.symbol} = ${fmtUsd(execPrice)}`} />
               <Row label={t("token.minReceived")} value={minLabel} />
-              <Row label={t("token.priceImpact")} value={`${quote.impact.toFixed(2)}%`} className={impactTone(quote.impact)} />
-              <Row label={`${t("common.fee")} (1%)`} value={fmtUsd(quote.fee)} />
+              <Row label={t("token.priceImpact")} value={`${impact.toFixed(2)}%`} className={impactTone(impact)} />
+              <Row label={`${t("common.fee")} (1%)`} value={fmtUsd(fee)} />
               <Row label="Gas" value="~$0.01 USDC" />
             </div>
-            {quote.impact >= 5 && (
-              <div className={cn("flex items-start gap-2 rounded-lg p-2.5 text-[11px]", quote.impact >= 10 ? "bg-down/15 text-down" : "bg-gold/15 text-gold")}>
+            {impact >= 5 && (
+              <div className={cn("flex items-start gap-2 rounded-lg p-2.5 text-[11px]", impact >= 10 ? "bg-down/15 text-down" : "bg-gold/15 text-gold")}>
                 <AlertTriangle size={14} className="mt-0.5 shrink-0" /> {t("token.impactHigh")}
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button size="xl" variant={side === "buy" ? "up" : "down"} className="w-full" onClick={confirm}>
-              {t("token.confirm")} {side === "buy" ? t("common.buy") : t("common.sell")}
+            <Button size="xl" variant={side === "buy" ? "up" : "down"} className="w-full" onClick={confirm} disabled={busy}>
+              {busy ? t("tx.confirming") : `${t("token.confirm")} ${side === "buy" ? t("common.buy") : t("common.sell")}`}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -55,9 +55,10 @@ services:
       DEPLOYMENTS_FILE: /app/deployments.json
       KEEPER_ENABLED: "true"
       KEEPER_PRIVATE_KEY: ${PRIVATE_KEY}
+      # testnet: distribute at ≥0.01 USDC accrued or every 10 min; mainnet will use 50 USDC / 30 min
       KEEPER_INTERVAL_MS: "60000"
-      KEEPER_FEE_THRESHOLD: "50000"
-      KEEPER_MAX_AGE_MS: "1800000"
+      KEEPER_FEE_THRESHOLD: ${KEEPER_FEE_THRESHOLD:-10000}
+      KEEPER_MAX_AGE_MS: ${KEEPER_MAX_AGE_MS:-600000}
     volumes:
       - ./contracts/deployments/arc-testnet.json:/app/deployments.json:ro
     logging:
