@@ -1,0 +1,213 @@
+export type Locale = "zh" | "en";
+
+const dict = {
+  // nav
+  "nav.explore": ["发现", "Explore"],
+  "nav.rank": ["排行", "Rank"],
+  "nav.create": ["发币", "Create"],
+  "nav.creator": ["创作者", "Creator"],
+  "nav.burn": ["销毁", "Burn"],
+  "nav.me": ["我的", "Me"],
+  "nav.docs": ["文档", "Docs"],
+
+  // common
+  "common.connect": ["连接钱包", "Connect wallet"],
+  "common.connected": ["已连接", "Connected"],
+  "common.search": ["搜索代币 / 地址", "Search token / address"],
+  "common.buy": ["买入", "Buy"],
+  "common.sell": ["卖出", "Sell"],
+  "common.price": ["价格", "Price"],
+  "common.mcap": ["市值", "Market cap"],
+  "common.volume24h": ["24h 成交", "24h volume"],
+  "common.holders": ["持有人", "Holders"],
+  "common.change24h": ["24h", "24h"],
+  "common.liquidity": ["流动性", "Liquidity"],
+  "common.created": ["创建于", "Created"],
+  "common.creator": ["创作者", "Creator"],
+  "common.graduated": ["已毕业", "Graduated"],
+  "common.graduating": ["冲刺中", "Climbing"],
+  "common.new": ["新发射", "New"],
+  "common.trending": ["热门", "Trending"],
+  "common.all": ["全部", "All"],
+  "common.viewAll": ["查看全部", "View all"],
+  "common.copy": ["复制", "Copy"],
+  "common.copied": ["已复制", "Copied"],
+  "common.claim": ["领取", "Claim"],
+  "common.tx": ["交易哈希", "Tx"],
+  "common.time": ["时间", "Time"],
+  "common.amount": ["数量", "Amount"],
+  "common.total": ["总额", "Total"],
+  "common.type": ["类型", "Type"],
+  "common.wallet": ["钱包", "Wallet"],
+  "common.balance": ["余额", "Balance"],
+  "common.max": ["最大", "Max"],
+  "common.slippage": ["滑点", "Slippage"],
+  "common.fee": ["手续费", "Fee"],
+  "common.free": ["免费", "Free"],
+  "common.next": ["下一步", "Next"],
+  "common.back": ["上一步", "Back"],
+  "common.launch": ["发射", "Launch"],
+  "common.token": ["代币", "Token"],
+  "common.progress": ["毕业进度", "Graduation"],
+  "common.status": ["状态", "Status"],
+  "common.live": ["实时", "LIVE"],
+  "common.usdcSettled": ["USDC 结算", "USDC settled"],
+  "common.finality": ["< 1s 终局", "< 1s finality"],
+  "common.disclaimer": [
+    "代币由用户创建，可能归零。名称可被仿冒，请以合约地址为准。ArcLaunch 仅提供界面，不构成投资建议。",
+    "Tokens are user-created and may lose all value. Names can be copied; always verify the contract address. ArcLaunch is an interface, not investment advice.",
+  ],
+
+  // explore
+  "explore.title": ["发现", "Explore"],
+  "explore.subtitle": [
+    "Arc 链上正在冲刺毕业的代币，全部以 USDC 计价",
+    "Tokens climbing toward graduation on Arc, all priced in USDC",
+  ],
+  "explore.stat.launched": ["今日发币", "Launched today"],
+  "explore.stat.volume": ["今日成交", "Volume today"],
+  "explore.stat.fees": ["今日手续费", "Fees today"],
+  "explore.stat.burned": ["累计销毁", "Total burned"],
+  "explore.king": ["山丘之王", "King of the hill"],
+  "explore.kingDesc": ["最接近毕业的代币", "Closest to graduation"],
+
+  // token
+  "token.trades": ["交易", "Trades"],
+  "token.holders": ["持有人", "Holders"],
+  "token.info": ["信息", "Info"],
+  "token.about": ["简介", "About"],
+  "token.creatorFee": ["创作者分成", "Creator share"],
+  "token.protocolFee": ["协议分成", "Protocol share"],
+  "token.poolFee": ["池手续费", "Pool fee"],
+  "token.lpLocked": ["LP 永久锁定", "LP locked forever"],
+  "token.feesEarned": ["累计手续费", "Fees earned"],
+  "token.paired": ["池内 USDC", "USDC in pool"],
+  "token.threshold": ["毕业阈值", "Threshold"],
+  "token.graduatedAt": ["毕业于", "Graduated"],
+  "token.youPay": ["支付", "You pay"],
+  "token.youReceive": ["获得", "You receive"],
+  "token.priceImpact": ["价格影响", "Price impact"],
+  "token.minReceived": ["最少获得", "Min. received"],
+  "token.protectionActive": [
+    "发射保护期：每钱包最多持有 5%，单笔最多 5.5%",
+    "Launch protection: max 5% per wallet, 5.5% per buy",
+  ],
+  "token.supply": ["总供应", "Supply"],
+  "token.pool": ["池子", "Pool"],
+  "token.contract": ["合约", "Contract"],
+
+  // create
+  "create.title": ["发射一个代币", "Launch a token"],
+  "create.subtitle": [
+    "一笔交易完成：铸币、建 USDC 池、LP 永久锁定。你不需要垫任何 USDC。",
+    "One transaction: mint, create the USDC pool, lock LP forever. No USDC needed from you.",
+  ],
+  "create.step1": ["基本信息", "Basics"],
+  "create.step2": ["社交与描述", "Socials"],
+  "create.step3": ["起始价与首购", "Pricing"],
+  "create.name": ["名称", "Name"],
+  "create.symbol": ["符号", "Symbol"],
+  "create.logo": ["Logo", "Logo"],
+  "create.description": ["描述", "Description"],
+  "create.website": ["网站", "Website"],
+  "create.twitter": ["X / Twitter", "X / Twitter"],
+  "create.telegram": ["Telegram", "Telegram"],
+  "create.startMcap": ["起始市值", "Starting market cap"],
+  "create.startMcapHint": [
+    "起始价 = 起始市值 ÷ 10 亿。所有人（包括你）都只能从这个价格开始买。",
+    "Start price = market cap ÷ 1B. Everyone, including you, buys from this price.",
+  ],
+  "create.initialBuy": ["首笔买入（可选）", "Initial buy (optional)"],
+  "create.initialBuyHint": [
+    "在发射区块内只有你的这笔能成交，用于抢在机器人前面。",
+    "Only your buy executes in the launch block, ahead of bots.",
+  ],
+  "create.fee": ["创建费", "Creation fee"],
+  "create.feeWaived": ["白名单减免", "Whitelist waived"],
+  "create.feeFree": ["当前免费", "Currently free"],
+  "create.preview": ["预览", "Preview"],
+  "create.summary": ["费用摘要", "Summary"],
+  "create.youGet": ["你将永久获得", "You earn forever"],
+  "create.youGetDesc": [
+    "该代币每笔交易 1% 手续费中的 75%，毕业前后不变，自动到账。",
+    "75% of the 1% fee on every trade of this token, before and after graduation, paid automatically.",
+  ],
+  "create.launchBtn": ["发射到 Arc", "Launch on Arc"],
+  "create.dropLogo": ["拖入或点击上传 · PNG/JPG/GIF · 1:1", "Drop or click · PNG/JPG/GIF · 1:1"],
+
+  // creator
+  "creator.title": ["创作者中心", "Creator center"],
+  "creator.subtitle": [
+    "你发射的代币、每一笔自动到账的分润",
+    "Your launches and every automatic payout",
+  ],
+  "creator.totalEarned": ["累计分润", "Total earned"],
+  "creator.pending": ["待归集", "Pending"],
+  "creator.pendingHint": [
+    "累计 ≥ 50 USDC 或每 30 分钟自动归集到你的钱包",
+    "Auto-swept to your wallet at ≥ 50 USDC or every 30 min",
+  ],
+  "creator.claimable": ["可领取", "Claimable"],
+  "creator.claimableHint": [
+    "自动打款失败时会留在这里，可手动领取",
+    "Held here if an auto-payout failed; claim manually",
+  ],
+  "creator.myTokens": ["我发射的代币", "My launches"],
+  "creator.payouts": ["到账记录", "Payouts"],
+  "creator.payoutAddr": ["收款地址", "Payout address"],
+  "creator.edit": ["修改", "Edit"],
+  "creator.forever": [
+    "毕业后依旧永久享受手续费分润",
+    "You keep earning fees forever, even after graduation",
+  ],
+
+  // burn
+  "burn.title": ["销毁与国库", "Burn & treasury"],
+  "burn.subtitle": [
+    "平台每一分收入、每一次回购销毁，链上可查",
+    "Every dollar of revenue and every buyback, verifiable onchain",
+  ],
+  "burn.treasury": ["国库余额", "Treasury"],
+  "burn.revenue": ["累计收入", "Total revenue"],
+  "burn.fromCreation": ["来自创建费", "From creation fees"],
+  "burn.fromFees": ["来自交易分成", "From trade fees"],
+  "burn.burned": ["已销毁 $ARCL", "$ARCL burned"],
+  "burn.supply": ["流通供应", "Circulating"],
+  "burn.split": ["国库分配", "Treasury split"],
+  "burn.buyback": ["回购销毁", "Buyback & burn"],
+  "burn.eco": ["生态基金", "Ecosystem fund"],
+  "burn.history": ["销毁记录", "Burn history"],
+  "burn.nextRun": ["下次执行", "Next run"],
+  "burn.threshold": ["触发阈值", "Trigger"],
+  "burn.immutable": ["比例写入合约，不可更改", "Ratio is immutable in the contract"],
+  "burn.notStarted": [
+    "TWAP 回购将在国库余额达到阈值后启动",
+    "TWAP buyback starts once treasury reaches the threshold",
+  ],
+
+  // rank
+  "rank.title": ["排行榜", "Leaderboard"],
+  "rank.byVolume": ["成交额", "Volume"],
+  "rank.byGain": ["涨幅", "Gainers"],
+  "rank.byHolders": ["持有人", "Holders"],
+  "rank.byCreator": ["创作者收入", "Creator earnings"],
+
+  // me
+  "me.title": ["我的", "Portfolio"],
+  "me.holdings": ["持仓", "Holdings"],
+  "me.history": ["交易历史", "History"],
+  "me.value": ["持仓价值", "Value"],
+  "me.pnl": ["盈亏", "PnL"],
+  "me.empty": ["还没有持仓，去发现页看看", "No holdings yet. Explore tokens"],
+
+  // theme
+  "theme.arc": ["Arc Blue", "Arc Blue"],
+  "theme.terminal": ["Terminal", "Terminal"],
+} as const;
+
+export type DictKey = keyof typeof dict;
+
+export function translate(key: DictKey, locale: Locale): string {
+  const pair = dict[key];
+  return locale === "zh" ? pair[0] : pair[1];
+}
