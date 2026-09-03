@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -14,6 +15,8 @@ import {INonfungiblePositionManager} from "./interfaces/IUniswapV3.sol";
 ///      creator) can trigger it. Creator payouts that revert (e.g. USDC blocklist on Arc) are parked
 ///      in `claimable` so a single bad address can never wedge the pool or the protocol share.
 contract FeeLocker is IERC721Receiver, Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
     struct Lock {
         uint256 tokenId;
         address token; // launch token
@@ -148,7 +151,7 @@ contract FeeLocker is IERC721Receiver, Ownable, ReentrancyGuard {
         uint256 amt = claimable[msg.sender][asset];
         if (amt == 0) revert NothingToClaim();
         claimable[msg.sender][asset] = 0;
-        require(IERC20(asset).transfer(msg.sender, amt), "transfer failed");
+        IERC20(asset).safeTransfer(msg.sender, amt);
         emit Claimed(msg.sender, asset, amt);
     }
 

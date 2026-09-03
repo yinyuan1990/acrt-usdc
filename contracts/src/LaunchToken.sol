@@ -33,8 +33,11 @@ contract LaunchToken is ERC20 {
     ///      and are never subject to hold caps (factory, locker, position manager).
     mapping(address => bool) public exempt;
 
+    event PoolSet(address indexed pool);
+
     error OnlyFactory();
     error PoolAlreadySet();
+    error ZeroAddress();
     error LaunchBlockOnlyCreator();
     error ExceedsMaxBuy();
     error ExceedsMaxHold();
@@ -75,8 +78,10 @@ contract LaunchToken is ERC20 {
     function setPool(address pool) external {
         if (msg.sender != factory) revert OnlyFactory();
         if (liquidityPool != address(0)) revert PoolAlreadySet();
+        if (pool == address(0)) revert ZeroAddress();
         liquidityPool = pool;
         exempt[pool] = true;
+        emit PoolSet(pool);
     }
 
     function restrictionsActive() public view returns (bool) {

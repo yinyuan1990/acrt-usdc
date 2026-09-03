@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ISwapRouter} from "./interfaces/IUniswapV3.sol";
@@ -11,6 +12,8 @@ import {ISwapRouter} from "./interfaces/IUniswapV3.sol";
 ///         Once the platform token is configured, `execute()` buys it with BUYBACK_BPS of the USDC
 ///         balance and burns it; the remainder goes to the ecosystem fund. The split is immutable.
 contract Treasury is Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
     uint16 public constant BUYBACK_BPS = 8_200; // 82% buy & burn
     uint16 public constant ECO_BPS = 1_800; // 18% ecosystem / operations
     address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD; // Arc forbids the zero address
@@ -74,7 +77,7 @@ contract Treasury is Ownable, ReentrancyGuard {
         uint256 toBuy = (spend * BUYBACK_BPS) / 10_000;
         uint256 toEco = spend - toBuy;
 
-        IERC20(usdc).approve(address(router), toBuy);
+        IERC20(usdc).forceApprove(address(router), toBuy);
         uint256 out = router.exactInputSingle(
             ISwapRouter.ExactInputSingleParams({
                 tokenIn: usdc,
@@ -87,7 +90,7 @@ contract Treasury is Ownable, ReentrancyGuard {
                 sqrtPriceLimitX96: 0
             })
         );
-        require(IERC20(usdc).transfer(ecoFund, toEco), "eco transfer failed");
+        IERC20(usdc).safeTransfer(ecoFund, toEco);
 
         totalBoughtBack += toBuy;
         totalBurned += out;
@@ -96,8 +99,8 @@ contract Treasury is Ownable, ReentrancyGuard {
     }
 
     /// @notice Convert protocol-share launch tokens into USDC (owner-gated because of slippage).
-    function convert(address token, uint24 poolFee, uint256 amountIn, uint256 minUsdcOut) external onlyOwner nonReentrant {
-        IERC20(token).approve(address(router), amountIn);
+    function convert(address token, uint24 poolFee, uint256 amountIn, uint256 minUsdcOut) external nonReentrant onlyOwner {
+        IERC20(token).forceApprove(address(router), amountIn);
         uint256 out = router.exactInputSingle(
             ISwapRouter.ExactInputSingleParams({
                 tokenIn: token,

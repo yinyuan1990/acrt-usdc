@@ -87,6 +87,8 @@ contract LaunchFactory is Ownable, ReentrancyGuard {
     event FeeWaiverSet(address indexed account, bool waived);
 
     error StartPriceOutOfRange(int24 tick);
+    error ZeroAddress();
+    error NoLiquidity();
     error UnknownToken();
     error AlreadyGraduated();
     error NotGraduated();
@@ -100,6 +102,10 @@ contract LaunchFactory is Ownable, ReentrancyGuard {
         address treasury_,
         address owner_
     ) Ownable(owner_) {
+        if (
+            uniFactory_ == address(0) || positionManager_ == address(0) || router_ == address(0) || usdc_ == address(0)
+                || locker_ == address(0) || treasury_ == address(0)
+        ) revert ZeroAddress();
         uniFactory = IUniswapV3Factory(uniFactory_);
         positionManager = INonfungiblePositionManager(positionManager_);
         router = ISwapRouter(router_);
@@ -229,7 +235,8 @@ contract LaunchFactory is Ownable, ReentrancyGuard {
         (int24 tickLower, int24 tickUpper) = _range(pool, isToken0);
         uint256 supply = LaunchToken(token).SUPPLY();
         IERC20(token).forceApprove(address(positionManager), supply);
-        (positionId,,,) = positionManager.mint(
+        uint128 liquidity;
+        (positionId, liquidity,,) = positionManager.mint(
             INonfungiblePositionManager.MintParams({
                 token0: isToken0 ? token : usdc,
                 token1: isToken0 ? usdc : token,
@@ -244,6 +251,7 @@ contract LaunchFactory is Ownable, ReentrancyGuard {
                 deadline: block.timestamp
             })
         );
+        if (liquidity == 0) revert NoLiquidity();
         // rounding dust the position could not absorb
         uint256 dust = IERC20(token).balanceOf(address(this));
         if (dust > 0) IERC20(token).safeTransfer(treasury, dust);
