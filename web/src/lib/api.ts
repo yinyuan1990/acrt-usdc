@@ -94,7 +94,7 @@ export type WalletView = {
 };
 export type Burn = { hash: string; time: string; usdcSpent: string; tokensBurned: string; usdcToEco: string };
 export type TreasuryView = {
-  address: string; usdcBalance: string; fromCreationFees: string; fromTradeFees: string; buybackBps: number; ecoBps: number;
+  address: string; usdcBalance: string; fromCreationFees: string; fromTradeFees: string; buybackBps: number; ecoBps: number; devBps: number; devFund: string; totalToDevUsdc: string;
   intervalSec: number; lastExecutedAt: number; nextExecuteAt: number; pendingRevenueUsdc: string; buybackReserveUsdc: string; feeRecipient: string; ecoFund: string;
   buybackCooldownSec: number; nextBuybackAt: number; nextBuybackAmountUsdc: string;
   totalBoughtBackUsdc: string; totalBurned: string; totalToEcoUsdc: string;

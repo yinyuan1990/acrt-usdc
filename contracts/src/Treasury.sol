@@ -9,24 +9,27 @@ import {ISwapRouter, IUniswapV3Factory, IUniswapV3Pool} from "./interfaces/IUnis
 import {SwapGuard} from "./libraries/SwapGuard.sol";
 
 /// @title Treasury
-/// @notice Collects every protocol revenue stream in USDC (the protocol share of swap fees) and settles it on a
-///         fixed weekly cycle:
-///           - ECO_BPS (80%) of the new revenue is transferred to the ecosystem fund (a multisig);
-///           - BUYBACK_BPS (20%) is earmarked for buying the platform token and sending it to the dead address
-///             (Arc forbids transfers to the zero address, so 0x…dEaD is the burn sink).
+/// @notice Collects the protocol share of swap fees (0.25% of every trade, i.e. 25% of the 1% pool fee) in USDC
+///         and settles it on a fixed weekly cycle. Of that share:
+///           - ECO_BPS (76%  = 0.19% of the trade) is transferred to the ecosystem reserve (a multisig);
+///           - BUYBACK_BPS (20% = 0.05% of the trade) is earmarked for buying the platform token and sending it to
+///             the dead address (Arc forbids transfers to the zero address, so 0x…dEaD is the burn sink);
+///           - DEV_BPS (4% = 0.01% of the trade) is transferred to the development team wallet.
+///         Together with the creator's 75% that is the whole 1% pool fee: 75 / 19 / 5 / 1.
 ///         The buyback is executed in guarded slices: each `buyback` call spends at most what moves the pool
 ///         ~1.5% and never fills below the pool TWAP minus a tolerance (see SwapGuard), with a cooldown between
 ///         slices. A permissionless swap of the full weekly amount in one go could be sandwiched; sliced this way
 ///         a sandwich is unprofitable and a manipulated price makes the slice revert instead of filling.
 ///         Until the platform token is configured the buyback share simply accumulates as a reserve. The split,
-///         the cadence and the ecosystem fund address are immutable; the platform token can be set exactly once.
+///         the cadence and both payout addresses are immutable; the platform token can be set exactly once.
 /// @dev `execute` and `buyback` are permissionless; a keeper calls them on schedule. Contracts cannot schedule
 ///      themselves, so the interval / cooldown are enforced here and the trigger comes from outside.
 contract Treasury is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    uint16 public constant ECO_BPS = 8_000; // 80% → ecosystem fund (multisig)
+    uint16 public constant ECO_BPS = 7_600; // 76% of the protocol share → ecosystem reserve (multisig)
     uint16 public constant BUYBACK_BPS = 2_000; // 20% → buy & burn the platform token
+    uint16 public constant DEV_BPS = 400; // 4% → development team
     uint256 public constant INTERVAL = 7 days;
     uint256 public constant BUYBACK_COOLDOWN = 10 minutes;
     address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
@@ -34,8 +37,10 @@ contract Treasury is Ownable, ReentrancyGuard {
     address public immutable usdc;
     ISwapRouter public immutable router;
     IUniswapV3Factory public immutable uniFactory;
-    /// @dev The ecosystem multisig. Fixed at deployment; nobody (owner included) can redirect the 80%.
+    /// @dev The ecosystem multisig. Fixed at deployment; nobody (owner included) can redirect it.
     address public immutable ecoFund;
+    /// @dev The development team wallet (single address). Fixed at deployment.
+    address public immutable devFund;
 
     address public platformToken;
     uint24 public platformPoolFee;
@@ -49,10 +54,11 @@ contract Treasury is Ownable, ReentrancyGuard {
     uint256 public totalBoughtBack; // USDC spent on buybacks
     uint256 public totalBurned; // platform tokens burned
     uint256 public totalToEco;
+    uint256 public totalToDev;
 
     event Configured(address platformToken, uint24 poolFee, address pool);
     /// @dev Weekly settlement. `usdcSpent` / `tokensBurned` describe the first buyback slice taken in the same call.
-    event Executed(uint256 usdcToEco, uint256 usdcSpent, uint256 tokensBurned, uint256 reserveLeft);
+    event Executed(uint256 usdcToEco, uint256 usdcToDev, uint256 usdcSpent, uint256 tokensBurned, uint256 reserveLeft);
     /// @dev A standalone buyback slice (between settlements).
     event BoughtBack(uint256 usdcSpent, uint256 tokensBurned, uint256 reserveLeft);
     event Converted(address indexed token, uint256 amountIn, uint256 usdcOut);
@@ -64,14 +70,18 @@ contract Treasury is Ownable, ReentrancyGuard {
     error NothingToDo();
     error ZeroAddress();
 
-    constructor(address usdc_, address router_, address uniFactory_, address ecoFund_, address owner_) Ownable(owner_) {
-        if (usdc_ == address(0) || router_ == address(0) || uniFactory_ == address(0) || ecoFund_ == address(0)) {
-            revert ZeroAddress();
-        }
+    constructor(address usdc_, address router_, address uniFactory_, address ecoFund_, address devFund_, address owner_)
+        Ownable(owner_)
+    {
+        if (
+            usdc_ == address(0) || router_ == address(0) || uniFactory_ == address(0) || ecoFund_ == address(0)
+                || devFund_ == address(0)
+        ) revert ZeroAddress();
         usdc = usdc_;
         router = ISwapRouter(router_);
         uniFactory = IUniswapV3Factory(uniFactory_);
         ecoFund = ecoFund_;
+        devFund = devFund_;
     }
 
     /// @notice Sets the platform token once it exists (it is launched through the factory, so it cannot be a
@@ -118,8 +128,8 @@ contract Treasury is Ownable, ReentrancyGuard {
         return cap < reserve ? cap : reserve;
     }
 
-    /// @notice Weekly settlement. Permissionless. 80% of new revenue → eco fund, 20% → buyback reserve, then the
-    ///         first buyback slice is taken immediately (if the platform token is live).
+    /// @notice Weekly settlement. Permissionless. 76% of new revenue → eco reserve, 4% → dev team, 20% → buyback
+    ///         reserve, then the first buyback slice is taken immediately (if the platform token is live).
     /// @param minTokensOut extra slippage guard for that slice, on top of the TWAP floor.
     function execute(uint256 minTokensOut) external nonReentrant {
         // first cycle runs immediately; afterwards at most once per INTERVAL
@@ -127,8 +137,9 @@ contract Treasury is Ownable, ReentrancyGuard {
 
         uint256 fresh = pendingRevenue();
         uint256 toEco = (fresh * ECO_BPS) / 10_000;
-        uint256 newReserve = buybackReserve + (fresh - toEco);
-        if (toEco == 0 && _sliceAmount(newReserve) == 0) revert NothingToDo();
+        uint256 toDev = (fresh * DEV_BPS) / 10_000;
+        uint256 newReserve = buybackReserve + (fresh - toEco - toDev);
+        if (toEco == 0 && toDev == 0 && _sliceAmount(newReserve) == 0) revert NothingToDo();
 
         buybackReserve = newReserve;
         lastExecutedAt = block.timestamp;
@@ -136,8 +147,12 @@ contract Treasury is Ownable, ReentrancyGuard {
             IERC20(usdc).safeTransfer(ecoFund, toEco);
             totalToEco += toEco;
         }
+        if (toDev > 0) {
+            IERC20(usdc).safeTransfer(devFund, toDev);
+            totalToDev += toDev;
+        }
         (uint256 spent, uint256 burned) = _buybackSlice(minTokensOut);
-        emit Executed(toEco, spent, burned, buybackReserve);
+        emit Executed(toEco, toDev, spent, burned, buybackReserve);
     }
 
     /// @notice One buyback slice from the reserve. Permissionless, at most once per BUYBACK_COOLDOWN.

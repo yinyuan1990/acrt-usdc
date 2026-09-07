@@ -51,7 +51,7 @@
 <div class="wrap">
 
 <h1>ArcLaunch · 合约作用与关系图</h1>
-<p class="sub">更新 2026-09-06（合约 v2.4：创建费 $1 直接进多签、协议 25% 每 7 天 80/20 结算、税币模式）· 对应测试网部署 <code>contracts/deployments/arc-testnet.json</code> · 面向非技术读者，每个合约都配一个生活比喻</p>
+<p class="sub">更新 2026-09-07（合约 v2.7：1% 池费 75 创作者 / 19 储备金 / 5 回购销毁 / 1 开发团队，收款地址全部写死，防夹分批回购，CREATE2 抗预占池）· 对应测试网部署 <code>contracts/deployments/arc-testnet.json</code> · 面向非技术读者，每个合约都配一个生活比喻</p>
 
 <!-- ====================================================== 一句话 -->
 <div class="callout">
@@ -142,7 +142,7 @@
   <path d="M460 508 H558" stroke="#ef4444" stroke-width="2" fill="none" marker-end="url(#ar)"/>
   <text x="509" y="500" text-anchor="middle" fill="#fca5a5" font-size="11">20%</text>
   <path d="M460 530 C560 570 700 570 788 520" stroke="#f59e0b" stroke-width="2" fill="none" marker-end="url(#aa)"/>
-  <text x="640" y="580" text-anchor="middle" fill="#fcd34d" font-size="11">80%（每 7 天结算一次）</text>
+  <text x="640" y="580" text-anchor="middle" fill="#fcd34d" font-size="11">76%（每 7 天结算一次）· 4% 开发团队</text>
 
   <!-- keeper triggers -->
   <path d="M180 508 H268" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="4 4" fill="none" marker-end="url(#aa)"/>
@@ -156,7 +156,7 @@
   <span class="l-blue">发币流程（一笔交易内完成 ①–⑤）</span>
   <span class="l-purple">用户交易（只和 Uniswap 打交道）</span>
   <span class="l-green">手续费 → 创作者</span>
-  <span class="l-amber">协议 25% → 7 天结算 → 多签 80%；创建费 → 多签</span>
+  <span class="l-amber">协议 25% → 7 天结算 → 多签 76% / 开发团队 4% / 回购 20%；创建费 → 多签</span>
   <span class="l-red">回购销毁</span>
 </div>
 </div>
@@ -190,11 +190,11 @@
   </div>
 
   <div class="card a">
-    <span class="tag">我们写的</span><span class="tag">80/20 · 7 天写死</span>
+    <span class="tag">我们写的</span><span class="tag">76/20/4 · 7 天写死</span>
     <h3>Treasury（自动结算合约，不是国库）</h3>
-    <p class="role">只收协议那 25% 手续费（创建费不经它，直接进多签），最多攒 7 天。到点后任何人可调 <code>execute()</code>：80% 的 USDC 转生态多签，20% 从池子买 $ARCL 转进 <code>0x…dEaD</code>（Arc 禁止转零地址）销毁，然后余额归零。合约没有取款函数，管理员拿不走里面的钱。平台币未配置时 20% 先攒成备用金，配置后首个周期一并买掉。收到的代币侧手续费可由管理员 <code>convert()</code> 换成 USDC。</p>
+    <p class="role">只收协议那 25% 手续费（创建费不经它，直接进多签），最多攒 7 天。到点后任何人可调 <code>execute()</code>：76% 的 USDC 转储备金多签、4% 转开发团队地址、20% 划入回购金，再由 <code>buyback()</code> 分批从池子买 $ARCL 转进 <code>0x…dEaD</code>（Arc 禁止转零地址）销毁。合约没有取款函数，管理员拿不走里面的钱。平台币未配置时 20% 先攒着，配置后开始分批买。收到的代币侧手续费可由管理员 <code>convert()</code> 换成 USDC。</p>
     <div class="ana">商场门口的自动分账机：每周清一次箱，八成打到董事会的联名账户，两成上市场买回商场自己的股票撕掉。机器里从来不留钱，比例和周期刻在机器上，董事会也改不了。</div>
-    <div class="meta">管理员能改：<b>平台币地址、生态多签地址、把持有的代币换成 USDC</b>。改不了：<b>80/20、7 天周期</b>，也取不出钱。</div>
+    <div class="meta">管理员能改：<b>平台币地址（一次）、把持有的代币换成 USDC</b>。改不了：<b>76/20/4、7 天周期、多签与开发团队地址</b>，也取不出钱。</div>
   </div>
 
   <div class="card p">
@@ -222,7 +222,7 @@
   <div class="step"><div><b>用户在 Uniswap 池里买卖</b>，每笔 1% 手续费自动攒进 LP 地契。<br><span class="sub">价格由池子里 USDC / 代币比例决定，从起始价往上就是 x·y=k，和 pons v2 的曲线是同一条公式。</span></div></div>
   <div class="step"><div><b>Keeper 定期按 distribute()</b>：手续费 75% 自动到创作者钱包、25% 进结算合约（税币的税则分给营销 / 团队两个地址）。<br><span class="sub">每笔到账在创作者中心带 ArcScan 链接。打款失败进待领，随时 claim。</span></div></div>
   <div class="step"><div><b>池内 USDC ≥ 10,000 → 毕业</b>。<br><span class="sub">只是挂标志 + 进榜单 + 触发平台币激励。池子、费率、分成、地契一切不变，交易继续。</span></div></div>
-  <div class="step"><div><b>每 7 天 Keeper 按 execute()</b>：80% 转生态多签，20% 划入回购金；随后每 10 分钟 <code>buyback()</code> 一批买 $ARCL 打进 0x…dEaD，直到回购金归零。<br><span class="sub">每批最多推价 1.5%、成交不低于池子 10 分钟均价的 90%（合约层防三明治）；每笔在 /burn 看板带交易哈希。</span></div></div>
+  <div class="step"><div><b>每 7 天 Keeper 按 execute()</b>：76% 转储备金多签，4% 转开发团队，20% 划入回购金；随后每 10 分钟 <code>buyback()</code> 一批买 $ARCL 打进 0x…dEaD，直到回购金归零。<br><span class="sub">每批最多推价 1.5%、成交不低于池子 10 分钟均价的 90%（合约层防三明治）；每笔在 /burn 看板带交易哈希。</span></div></div>
   <div class="step"><div><b>永远</b>。<br><span class="sub">地契拿不出来，池子关不了，手续费一直分。创作者跑路了，管理员可改收款地址交给社区（CTO）。</span></div></div>
 </div>
 
@@ -234,7 +234,7 @@
   <tr><td>不可升级</td><td>没有代理合约、没有 upgrade 函数。部署那天什么样，永远什么样。</td></tr>
   <tr><td>地契没有出口</td><td>FeeLocker 源码里搜 <code>safeTransferFrom</code> / <code>transferFrom</code>——没有任何把 NFT 转走的调用。</td></tr>
   <tr><td>代币没有增发 / 黑名单 / 税开关</td><td>LaunchToken 源码 100 行，只有 <code>_update</code> 里一段窗口限购，其它全是 OpenZeppelin 标准 ERC20。</td></tr>
-  <tr><td>经济参数写死</td><td>75/25 在发币时快照进 Lock；80/20、7 天周期和 10 亿是 <code>constant</code>；税币的税率、两个地址和比例是 <code>immutable</code>。</td></tr>
+  <tr><td>经济参数写死</td><td>75/25 在发币时快照进 Lock；76/20/4、7 天周期和 10 亿是 <code>constant</code>；税币的税率、两个地址和比例是 <code>immutable</code>。</td></tr>
   <tr><td>管理员权限清单</td><td>见下表，一共 7 个函数，全部公开。<b>所有收款地址（生态多签 / 创建费收款 / 协议分成收款）部署时写死，管理员改不了。</b></td></tr>
 </table>
 

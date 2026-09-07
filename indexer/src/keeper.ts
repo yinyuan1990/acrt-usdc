@@ -62,7 +62,7 @@ async function tick(wallet: ReturnType<typeof keeperWallet>["wallet"], _me: Addr
   await buyback(wallet);
 }
 
-/** Treasury: weekly `execute()` (80% → eco multisig, 20% → buyback reserve, first slice bought), then
+/** Treasury: weekly `execute()` (76% → eco multisig, 4% → dev wallet, 20% → buyback reserve, first slice bought), then
  *  `buyback()` slices every BUYBACK_COOLDOWN until the reserve is spent. Both are permissionless and both
  *  enforce a TWAP floor + impact cap on-chain; the quote-based minOut here is only a second belt. */
 async function buyback(wallet: ReturnType<typeof keeperWallet>["wallet"]) {
@@ -98,13 +98,14 @@ async function buyback(wallet: ReturnType<typeof keeperWallet>["wallet"]) {
 
   // 1) weekly settlement
   if (now >= nextAt) {
-    const toEco = (pending * 8_000n) / 10_000n;
-    const newReserve = pending - toEco + reserve;
-    if (toEco > 0n || (configured && newReserve > 0n && sliceNow > 0n)) {
+    const toEco = (pending * 7_600n) / 10_000n;
+    const toDev = (pending * 400n) / 10_000n;
+    const newReserve = pending - toEco - toDev + reserve;
+    if (toEco > 0n || toDev > 0n || (configured && newReserve > 0n && sliceNow > 0n)) {
       const minOut = await quoteMin(sliceNow < newReserve ? sliceNow : newReserve);
       const hash = await wallet.writeContract({ address: ADDR.treasury, abi: treasuryAbi, functionName: "execute", args: [minOut], chain: wallet.chain, account: wallet.account! });
       const rc = await client.waitForTransactionReceipt({ hash });
-      const detail = `eco=${toEco} reserve=${newReserve} firstSlice≈${sliceNow} minOut=${minOut}`;
+      const detail = `eco=${toEco} dev=${toDev} reserve=${newReserve} firstSlice≈${sliceNow} minOut=${minOut}`;
       console.log(`[keeper] treasury.execute ${detail} → ${rc.status} ${hash}`);
       keeperLog({ action: "execute", detail, hash, ok: rc.status === "success" });
       return; // next tick picks up the remaining slices

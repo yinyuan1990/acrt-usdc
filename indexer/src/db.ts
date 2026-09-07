@@ -137,8 +137,10 @@ export async function migrate() {
     ts timestamptz not null,
     usdc_spent numeric(78,0) not null,
     tokens_burned numeric(78,0) not null,
-    usdc_to_eco numeric(78,0) not null
+    usdc_to_eco numeric(78,0) not null,
+    usdc_to_dev numeric(78,0) not null default 0
   )`;
+  await sql`alter table burns add column if not exists usdc_to_dev numeric(78,0) not null default 0`;
 
   await sql`create table if not exists comments (
     id bigserial primary key,

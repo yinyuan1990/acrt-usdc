@@ -349,7 +349,7 @@ app.get("/api/creator/:address", async (c) => {
 app.get("/api/treasury", async (c) => {
   const [s] = await sql`select coalesce(sum(creation_fee_paid),0) as creation from tokens`;
   const [f] = await sql`select coalesce(sum(quote_protocol),0) as proto from fee_events`;
-  const [platformToken, bal, nextAt, lastAt, pending, reserve, totalBoughtBack, totalBurned, totalToEco, ecoFund, feeRecipient, nextBuyAt, nextSlice] = await client.multicall({
+  const [platformToken, bal, nextAt, lastAt, pending, reserve, totalBoughtBack, totalBurned, totalToEco, ecoFund, feeRecipient, nextBuyAt, nextSlice, devFund, totalToDev] = await client.multicall({
     allowFailure: false,
     contracts: [
       { address: ADDR.treasury, abi: treasuryAbi, functionName: "platformToken" },
@@ -365,9 +365,11 @@ app.get("/api/treasury", async (c) => {
       { address: ADDR.factory, abi: factoryAbi, functionName: "feeRecipient" },
       { address: ADDR.treasury, abi: treasuryAbi, functionName: "nextBuybackAt" },
       { address: ADDR.treasury, abi: treasuryAbi, functionName: "nextBuybackAmount" },
+      { address: ADDR.treasury, abi: treasuryAbi, functionName: "devFund" },
+      { address: ADDR.treasury, abi: treasuryAbi, functionName: "totalToDev" },
     ],
   });
-  const burns = await sql`select tx_hash, ts, usdc_spent, tokens_burned, usdc_to_eco from burns order by ts desc limit 100`;
+  const burns = await sql`select tx_hash, ts, usdc_spent, tokens_burned, usdc_to_eco, usdc_to_dev from burns order by ts desc limit 100`;
   const configured = platformToken !== "0x0000000000000000000000000000000000000000";
   const [pt] = configured ? await sql`select * from tokens where address = ${getAddress(platformToken)}` : [null];
   return c.json({
@@ -375,9 +377,11 @@ app.get("/api/treasury", async (c) => {
     usdcBalance: bal.toString(),
     fromCreationFees: s.creation,
     fromTradeFees: f.proto,
-    // immutable: 80% of protocol revenue → eco multisig, 20% → weekly buyback & burn
+    // immutable split of the protocol share (25% of the 1% pool fee): 76% eco reserve / 20% buyback & burn / 4% dev
+    // → of the whole 1% fee: 75 creator / 19 reserve / 5 buyback / 1 dev
     buybackBps: 2000,
-    ecoBps: 8000,
+    ecoBps: 7600,
+    devBps: 400,
     intervalSec: 7 * 86400,
     lastExecutedAt: Number(lastAt),
     nextExecuteAt: Number(nextAt),
@@ -389,11 +393,13 @@ app.get("/api/treasury", async (c) => {
     nextBuybackAmountUsdc: nextSlice.toString(),
     feeRecipient,
     ecoFund,
+    devFund,
     totalBoughtBackUsdc: totalBoughtBack.toString(),
     totalBurned: totalBurned.toString(),
     totalToEcoUsdc: totalToEco.toString(),
+    totalToDevUsdc: totalToDev.toString(),
     platformToken: configured ? shapeToken(pt as Record<string, unknown>) : null,
-    burns: burns.map((b) => ({ hash: b.tx_hash, time: b.ts, usdcSpent: b.usdc_spent, tokensBurned: b.tokens_burned, usdcToEco: b.usdc_to_eco })),
+    burns: burns.map((b) => ({ hash: b.tx_hash, time: b.ts, usdcSpent: b.usdc_spent, tokensBurned: b.tokens_burned, usdcToEco: b.usdc_to_eco, usdcToDev: b.usdc_to_dev })),
   });
 });
 

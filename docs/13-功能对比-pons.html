@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -81,7 +81,7 @@
 <tr><td>创作者换收款地址</td><td>—（文档未提供自助入口）</td><td>✓ 创作者中心一键 <code>setPayout</code>，即时生效</td><td><span class="pill ok">✓ 更强</span></td></tr>
 <tr><td>防狙击</td><td>前 2 区块：首块仅创作者；每钱包 ≤5%、单笔 ≤5.5%</td><td>前 20 区块（Arc 0.5s 出块 ≈ 10s）：同规则，参数 admin 可调</td><td><span class="pill ok">✓ 同</span> 按出块速度重算</td></tr>
 <tr><td>社区接管 CTO</td><td>表单申请 → 团队审核 → <b>团队直接改</b>收款地址</td><td>表单申请（钱包签名）→ 后台审核 → <code>proposePayout</code> → <b>48h 时间锁</b> → 任何人执行；<b>期间原创作者可一键否决</b></td><td><span class="pill ok">✓ 更强</span> 时间锁 + 否决权写在合约里</td></tr>
-<tr><td>协议收入去向</td><td>80% TWAP 回购销毁 PONS（官方承认"尚不是不可变"）/ 20% 运营</td><td>协议 0.25% 进 Treasury，<b>每 7 天结算一次</b>：80% 转生态多签 / 20% 分批买 $ARCL → <code>0x…dEaD</code>（每批 ≤1.5% 冲击、隔 10 分钟、TWAP 地板，合约层防夹）；创建费直接进同一多签；<b>比例、周期与收款地址全部 immutable</b>（多签地址部署时写死，owner 也改不了；平台币只能设一次），<code>execute()</code> permissionless（Keeper 到点触发）</td><td><span class="pill ok">✓ 更强</span> 比例与节奏写死，pons 承认其比例可变</td></tr>
+<tr><td>协议收入去向</td><td>80% TWAP 回购销毁 PONS（官方承认"尚不是不可变"）/ 20% 运营</td><td>协议 0.25% 进 Treasury，<b>每 7 天结算一次</b>：76% 转储备金多签 / 4% 开发团队 / 20% 分批买 $ARCL → <code>0x…dEaD</code>（每批 ≤1.5% 冲击、隔 10 分钟、TWAP 地板，合约层防夹）；创建费直接进同一多签；<b>比例、周期与收款地址全部 immutable</b>（多签地址部署时写死，owner 也改不了；平台币只能设一次），<code>execute()</code> permissionless（Keeper 到点触发）</td><td><span class="pill ok">✓ 更强</span> 比例与节奏写死，pons 承认其比例可变</td></tr>
 <tr><td>销毁调整市值</td><td>price × (supply − burned)</td><td>同，代币页在有销毁时显示"流通市值（扣除销毁）"，FDV 另列</td><td><span class="pill ok">✓ 同</span></td></tr>
 <tr><td>元数据上链</td><td>name / symbol / logo / description / socials(5) / liquidityPool</td><td>同，socials 5 字段（website / X / Telegram / Discord / Farcaster）+ deployer / restrictionsEndBlock</td><td><span class="pill ok">✓ 同</span></td></tr>
 <tr><td>税币模式</td><td>无（pons 只有池费）。同链的 dyorswap 有：买/卖各 1–10%，税分 4 档（创作者钱包 / 销毁 / 分红 / 流动性），<b>税币只能迁 Uniswap V2</b></td><td>✓ 发币时选"标准币 / 税币"：买、卖各 0–10%（admin 上限）；税分给<b>营销钱包 + 团队钱包</b>两个自填地址，比例创作者定，买卖两边共用；税代币经 FeeLocker 卖成 USDC 自动打款；<b>税率、地址、比例 immutable，平台也改不了</b>；协议不从税抽成；"税加在外面"写法让税币<b>直接在 V3 池交易</b></td><td><span class="pill ok">✓ 独有</span> 相对 pons；相对 dyorswap：地址可自填（它固定发币钱包）、V3 兼容、不可改；少"分红 / 流动性 / 销毁"档</td></tr>
@@ -144,7 +144,7 @@
       <li>统一开盘市值（公平发射），创作者不能自选价格</li>
       <li>创作者只收 USDC，代币侧手续费自动换汇，Keeper 自动到账</li>
       <li>社区接管 48 小时时间锁 + 创作者一键否决（合约强制）</li>
-      <li>协议收入 80% 多签 / 20% 回购销毁，每 7 天结算，比例、周期、收款地址全部 immutable（pons 自己承认"尚不是不可变"）</li>
+      <li>1% 池费 75 创作者 / 19 储备金 / 5 回购销毁 / 1 开发团队，每 7 天结算，比例、周期、收款地址全部 immutable（pons 自己承认"尚不是不可变"）</li>
       <li>创建费可开关 / 可白名单减免 / 可设 0</li>
       <li>税币模式：买卖税 0–10% 创作者设定，分营销 / 团队两个自填地址，发射后 immutable、V3 池直接交易、协议不抽成</li>
       <li>管理员权限全表公开，合约不可升级</li>

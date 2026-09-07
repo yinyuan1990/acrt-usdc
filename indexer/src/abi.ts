@@ -56,7 +56,7 @@ export const poolAbi = parseAbi([
 export const erc20Abi = parseAbi(["function balanceOf(address) view returns (uint256)"]);
 
 export const treasuryAbi = parseAbi([
-  "event Executed(uint256 usdcToEco, uint256 usdcSpent, uint256 tokensBurned, uint256 reserveLeft)",
+  "event Executed(uint256 usdcToEco, uint256 usdcToDev, uint256 usdcSpent, uint256 tokensBurned, uint256 reserveLeft)",
   "event BoughtBack(uint256 usdcSpent, uint256 tokensBurned, uint256 reserveLeft)",
   "event Configured(address platformToken, uint24 poolFee, address pool)",
   "function execute(uint256 minTokensOut)",
@@ -73,9 +73,11 @@ export const treasuryAbi = parseAbi([
   "function platformToken() view returns (address)",
   "function platformPoolFee() view returns (uint24)",
   "function ecoFund() view returns (address)",
+  "function devFund() view returns (address)",
   "function totalBoughtBack() view returns (uint256)",
   "function totalBurned() view returns (uint256)",
   "function totalToEco() view returns (uint256)",
+  "function totalToDev() view returns (uint256)",
   "function owner() view returns (address)",
 ]);
 

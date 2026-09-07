@@ -158,8 +158,9 @@ contract GuardTest is Base {
         vm.warp(block.timestamp + 60);
 
         uint256 m0 = spotMcap(token, pool);
-        treasury.execute(0); // 1600 → eco, 400 reserved, first slice bought
-        assertEq(usdc.balanceOf(eco), 1_600e6 + 1e6); // + the ARCL creation fee
+        treasury.execute(0); // 1520 → eco, 80 → dev, 400 reserved, first slice bought
+        assertEq(usdc.balanceOf(eco), 1_520e6 + 1e6); // + the ARCL creation fee
+        assertEq(usdc.balanceOf(dev), 80e6);
         uint256 firstSlice = treasury.totalBoughtBack();
         assertGt(firstSlice, 0);
         assertLt(firstSlice, 400e6, "not everything in one go");

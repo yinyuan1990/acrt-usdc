@@ -257,14 +257,15 @@ export default function DocsPage() {
           <Section id="revenue" title={L("协议收入", "Protocol revenue")}>
             <P>
               {L(
-                "每笔交易 1% 池费的分配：0.75% 创作者、0.20% 生态基金、0.05% 平台币回购销毁。协议那 0.25% 进入一个自动结算合约，每 7 天结算一次（任何人可调用 execute()，Keeper 到点自动触发）：80% 转入生态基金多签，20% 划入回购金，随后分批在平台币 $ARCL 的池子里买入并转入 0x…dEaD 销毁地址（Arc 禁止转零地址）。分批规则写在合约里：每批最多推动价格 1.5%、间隔 10 分钟、成交价不得低于池子 10 分钟均价的 90%，所以任何人调用都无法夹我们。平台币未配置期间，20% 留在合约里累积，配置后开始买入销毁。创建费直接进入同一个生态多签。平台不设资金池：所有收入的终点只有多签和销毁地址。80/20、7 天周期、多签地址都写死在合约里不可更改。",
-                "Every trade's 1% pool fee is split 0.75% creator, 0.20% ecosystem fund, 0.05% platform-token buyback & burn. The protocol's 0.25% flows into an automatic settlement contract that settles every 7 days (anyone can call execute(); the keeper triggers it on schedule): 80% is transferred to the ecosystem multisig, 20% is reserved and then spent in slices buying the platform token $ARCL and sending it to the 0x…dEaD burn address (Arc forbids transfers to the zero address). The slicing is enforced on-chain: each slice moves the price at most 1.5%, slices are 10 minutes apart, and every fill must be within 10% of the pool's 10-minute TWAP, so nobody can sandwich the buyback. Creation fees go straight to the same multisig. The platform keeps no fund pool: every dollar ends up either in the multisig or in the burn address. The 80/20 split, the 7-day cadence and the multisig address are immutable.",
+                "每笔交易 1% 池费的分配（合计 100%）：项目方创作者 75%、储备金 19%、$ARCL 回购销毁 5%、开发团队 1%。创作者那 75% 由 FeeLocker 直接打给创作者；其余 25% 进入一个自动结算合约，每 7 天结算一次（任何人可调用 execute()，Keeper 到点自动触发）：76% 转入储备金多签（= 交易额的 0.19%），4% 转入开发团队地址（= 0.01%），20% 划入回购金（= 0.05%），随后分批在 $ARCL 的池子里买入并转入 0x…dEaD 销毁地址（Arc 禁止转零地址）。分批规则写在合约里：每批最多推动价格 1.5%、间隔 10 分钟、成交价不得低于池子 10 分钟均价的 90%，所以任何人调用都无法夹我们。平台币未配置期间，回购部分留在合约里累积，配置后开始买入销毁。创建费直接进入储备金多签。平台不设资金池：所有收入的终点只有多签、开发团队地址和销毁地址。比例、7 天周期、两个收款地址都写死在合约里不可更改。",
+                "Every trade's 1% pool fee is split (100%): creator 75%, reserve 19%, $ARCL buyback & burn 5%, dev team 1%. The creator's 75% is paid directly by the FeeLocker; the other 25% flows into an automatic settlement contract that settles every 7 days (anyone can call execute(); the keeper triggers it on schedule): 76% goes to the reserve multisig (= 0.19% of volume), 4% to the dev team wallet (= 0.01%), 20% is reserved (= 0.05%) and then spent in slices buying $ARCL and sending it to the 0x…dEaD burn address (Arc forbids transfers to the zero address). The slicing is enforced on-chain: each slice moves the price at most 1.5%, slices are 10 minutes apart, and every fill must be within 10% of the pool's 10-minute TWAP, so nobody can sandwich the buyback. Creation fees go straight to the reserve multisig. The platform keeps no fund pool: every dollar ends up in the multisig, the dev wallet or the burn address. The ratios, the 7-day cadence and both payout addresses are immutable.",
               )}
             </P>
             <KvGrid
               rows={[
-                [L("生态基金（多签）", "Ecosystem fund (multisig)"), L("协议收入的 80% + 全部创建费：创作者激励、运营、审计", "80% of protocol revenue + all creation fees: creator incentives, operations, audits")],
-                [L("回购销毁", "Buyback & burn"), L("协议收入的 20%，每 7 天划入回购金后分批买入（≤1.5% 冲击 / 10 分钟一批 / TWAP 地板）", "20% of protocol revenue, reserved every 7 days and bought in slices (≤1.5% impact / 10-min cooldown / TWAP floor)")],
+                [L("储备金（多签）", "Reserve (multisig)"), L("每笔交易的 0.19%（协议份额的 76%）+ 全部创建费：创作者激励、运营、审计", "0.19% of every trade (76% of the protocol share) + all creation fees: creator incentives, operations, audits")],
+                [L("回购销毁", "Buyback & burn"), L("每笔交易的 0.05%（协议份额的 20%），每 7 天划入回购金后分批买入（≤1.5% 冲击 / 10 分钟一批 / TWAP 地板）", "0.05% of every trade (20% of the protocol share), reserved every 7 days and bought in slices (≤1.5% impact / 10-min cooldown / TWAP floor)")],
+                [L("开发团队", "Dev team"), L("每笔交易的 0.01%（协议份额的 4%），单地址，部署时写死", "0.01% of every trade (4% of the protocol share), single address fixed at deployment")],
                 [L("看板", "Dashboard"), <Link key="burn" href="/burn" className="text-primary hover:underline">/burn</Link>],
               ]}
             />
@@ -311,12 +312,12 @@ export default function DocsPage() {
                 title={L("做不到", "Cannot")}
                 items={[
                   L("动池子里的钱、动 LP、取回流动性", "Touch pool funds, the LP position, or withdraw liquidity"),
-                  L("改任何收款地址：生态多签、创建费收款、协议 25% 收款合约都在部署时写死", "Change any payout address: the ecosystem multisig, creation-fee recipient and protocol-share collector are fixed at deployment"),
+                  L("改任何收款地址：储备金多签、开发团队地址、创建费收款、协议 25% 收款合约都在部署时写死", "Change any payout address: the reserve multisig, dev wallet, creation-fee recipient and protocol-share collector are fixed at deployment"),
                   L("改任何已发射代币的 75/25 分成", "Change the 75/25 split of any launched token"),
                   L("增发、冻结、暂停交易、升级合约", "Mint, freeze, pause trading, or upgrade contracts"),
                   L("即时修改创作者收款地址", "Change a creator's payout address instantly"),
                   L("修改任何已发射代币的税率或税费流向", "Change the tax rate or allocation of any launched token"),
-                  L("改 80/20 结算比例、7 天周期、10 亿供应、1% 池费", "Change the 80/20 settlement split, the 7-day cadence, the 1B supply, or the 1% pool fee"),
+                  L("改 75/19/5/1 分配比例、7 天周期、10 亿供应、1% 池费", "Change the 75/19/5/1 split, the 7-day cadence, the 1B supply, or the 1% pool fee"),
                 ]}
               />
             </div>

@@ -16,8 +16,8 @@ import { Empty, LiveCountdown, PctChange, SectionTitle, Stat, TimeAgo, TokenAvat
 
 const SUPPLY = 1_000_000_000;
 
-/** Two-segment revenue split bar; colours come from the theme (--split-eco / --split-buyback). */
-function SplitBar({ eco, buyback }: { eco: number; buyback: number }) {
+/** Three-segment split bar of the protocol share; colours come from the theme (--split-eco / --split-buyback). */
+function SplitBar({ eco, buyback, dev }: { eco: number; buyback: number; dev: number }) {
   return (
     <div className="flex h-7 w-full gap-0.5 overflow-hidden rounded-lg">
       <div className="relative flex items-center justify-center overflow-hidden text-xs font-semibold text-black" style={{ width: `${eco}%`, background: "var(--split-eco)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.35)" }}>
@@ -25,6 +25,9 @@ function SplitBar({ eco, buyback }: { eco: number; buyback: number }) {
       </div>
       <div className="relative flex items-center justify-center overflow-hidden text-xs font-semibold text-white" style={{ width: `${buyback}%`, background: "var(--split-buyback)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.25)" }}>
         <span className="relative font-mono tabular">{buyback}%</span>
+      </div>
+      <div className="relative flex items-center justify-center overflow-hidden text-[10px] font-semibold text-white" style={{ width: `${dev}%`, background: "var(--muted-foreground)" }} title={`${dev}%`}>
+        <span className="relative font-mono tabular">{dev}</span>
       </div>
     </div>
   );
@@ -82,7 +85,8 @@ export default function BurnPage() {
   // progress through the 7-day window
   const cycleProgress = tr && nextAt > 0 && nowSec > 0 ? Math.min(100, Math.max(0, ((nowSec - (nextAt - interval)) / interval) * 100)) : 0;
   const buybackPct = (tr?.buybackBps ?? 2000) / 100;
-  const ecoPct = (tr?.ecoBps ?? 8000) / 100;
+  const ecoPct = (tr?.ecoBps ?? 7600) / 100;
+  const devPct = (tr?.devBps ?? 400) / 100;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -123,6 +127,7 @@ export default function BurnPage() {
                 <div className="mt-2 space-y-1 text-xs">
                   <div className="flex justify-between gap-2"><span className="text-muted-foreground"><Sprout size={11} className="mr-1 inline" style={{ color: "var(--split-eco)" }} />{t("burn.eco")} {ecoPct}%</span><span className="font-mono">{tr ? shortAddr(tr.ecoFund, 6, 4) : "…"}</span></div>
                   <div className="flex justify-between gap-2"><span className="text-muted-foreground"><Flame size={11} className="mr-1 inline" style={{ color: "var(--split-buyback)" }} />{t("burn.buyback")} {buybackPct}%</span><span className="font-mono">0x000…dEaD</span></div>
+                  <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("burn.dev")} {devPct}%</span><span className="font-mono">{tr ? shortAddr(tr.devFund, 6, 4) : "…"}</span></div>
                   <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("burn.reserve")}</span><span className="font-mono">{fmtUsd(reserve)}</span></div>
                   {reserve > 0 && pt && (
                     <div className="flex justify-between gap-2">
@@ -136,7 +141,8 @@ export default function BurnPage() {
                 </div>
               </div>
             </div>
-            <div className="mt-3"><SplitBar eco={ecoPct} buyback={buybackPct} /></div>
+            <div className="mt-3"><SplitBar eco={ecoPct} buyback={buybackPct} dev={devPct} /></div>
+            <p className="mt-1 text-[10px] text-muted-foreground">{t("burn.splitOfTrade")}</p>
             <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">{t("burn.creationFeeNote")}</p>
             <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground"><Lock size={10} className="mr-1 inline" />{t("burn.slicing")}</p>
             <Button variant="outline" size="sm" className="mt-3 w-full" asChild>

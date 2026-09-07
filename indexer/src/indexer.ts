@@ -176,15 +176,16 @@ async function onPayoutChanged(args: { token: Address; newPayout: Address }) {
 
 /** Weekly treasury settlement (eco transfer + first buyback slice) and standalone buyback slices (`BoughtBack`,
  *  usdcToEco = 0). Both land in `burns`. */
-async function onExecuted(log: Log, args: { usdcToEco?: bigint; usdcSpent: bigint; tokensBurned: bigint; reserveLeft: bigint }) {
+async function onExecuted(log: Log, args: { usdcToEco?: bigint; usdcToDev?: bigint; usdcSpent: bigint; tokensBurned: bigint; reserveLeft: bigint }) {
   const ts = await tsOf(log.blockNumber!);
   const toEco = args.usdcToEco ?? 0n;
-  const ins = await sql`insert into burns (tx_hash, block_number, ts, usdc_spent, tokens_burned, usdc_to_eco)
-    values (${log.transactionHash!}, ${Number(log.blockNumber)}, ${ts}, ${args.usdcSpent.toString()}, ${args.tokensBurned.toString()}, ${toEco.toString()})
+  const toDev = args.usdcToDev ?? 0n;
+  const ins = await sql`insert into burns (tx_hash, block_number, ts, usdc_spent, tokens_burned, usdc_to_eco, usdc_to_dev)
+    values (${log.transactionHash!}, ${Number(log.blockNumber)}, ${ts}, ${args.usdcSpent.toString()}, ${args.tokensBurned.toString()}, ${toEco.toString()}, ${toDev.toString()})
     on conflict (tx_hash) do nothing returning id`;
   if (ins.length === 0) return;
-  bus.emit("ws", { type: "burn", data: { tx: log.transactionHash, usdcSpent: args.usdcSpent.toString(), tokensBurned: args.tokensBurned.toString(), usdcToEco: toEco.toString(), ts } });
-  console.log(`[treasury] eco ${toEco} · spent ${args.usdcSpent} usdc → burned ${args.tokensBurned} · reserve ${args.reserveLeft}`);
+  bus.emit("ws", { type: "burn", data: { tx: log.transactionHash, usdcSpent: args.usdcSpent.toString(), tokensBurned: args.tokensBurned.toString(), usdcToEco: toEco.toString(), usdcToDev: toDev.toString(), ts } });
+  console.log(`[treasury] eco ${toEco} · dev ${toDev} · spent ${args.usdcSpent} usdc → burned ${args.tokensBurned} · reserve ${args.reserveLeft}`);
 }
 
 async function onClaimed(log: Log, args: { account: Address; asset: Address; amount: bigint }) {

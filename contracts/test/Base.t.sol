@@ -26,6 +26,7 @@ abstract contract Base is Test {
     address creator = makeAddr("creator");
     address buyer = makeAddr("buyer");
     address eco = makeAddr("eco");
+    address dev = makeAddr("dev");
 
     function setUp() public virtual {
         usdc = new MockUSDC();
@@ -39,7 +40,7 @@ abstract contract Base is Test {
         router = ISwapRouter(deployCode("vendor/uniswap-v3/SwapRouter.json", abi.encode(address(uni), address(usdc))));
         quoter = deployCode("vendor/uniswap-v3/QuoterV2.json", abi.encode(address(uni), address(usdc)));
 
-        treasury = new Treasury(address(usdc), address(router), address(uni), eco, owner);
+        treasury = new Treasury(address(usdc), address(router), address(uni), eco, dev, owner);
         locker = new FeeLocker(address(nfpm), address(router), address(treasury), owner);
         factory = new LaunchFactory(
             address(uni), address(nfpm), address(router), address(usdc), address(locker), address(treasury), eco, owner
