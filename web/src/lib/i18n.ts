@@ -188,21 +188,19 @@ const dict = {
   "burn.pendingRevenue": ["本周期待处理收入", "Revenue pending this cycle"],
   "burn.until": ["距下次销毁", "Next burn in"],
   "burn.dueNow": ["已到期，等待 Keeper 执行", "Due — waiting for the keeper"],
-  "burn.reserve": ["待回购金额", "Buyback reserve"],
   "burn.nextSlice": ["下一笔回购", "Next slice"],
-  "burn.slicing": [
-    "回购分批执行：每笔最多推动价格 1.5%，间隔 10 分钟，成交价不得低于池子 10 分钟均价的 90%——合约层面防夹",
-    "Buybacks run in slices: each moves the price at most 1.5%, 10 minutes apart, and must fill within 10% of the pool's 10-minute TWAP — sandwich-proof at the contract level",
-  ],
   "burn.dev": ["开发团队", "Dev team"],
-  "burn.splitOfTrade": [
-    "占每笔交易 1% 池费：创作者 0.75% · 储备金 0.19% · 回购销毁 0.05% · 开发团队 0.01%",
-    "Of each trade's 1% pool fee: creator 0.75% · reserve 0.19% · buyback & burn 0.05% · dev team 0.01%",
+  "burn.core.title": ["回购销毁（通缩核心）", "Buyback & burn (deflation engine)"],
+  "burn.core.auto": ["合约自动执行，每周触发，不可篡改。", "Executed by the contract, triggered weekly, tamper-proof."],
+  "burn.core.guard": [
+    "每笔回购限价涨幅 1.5%，间隔 10 分钟，成交价不低于 10 分钟 TWAP 的 90%——从合约层面严防 MEV 夹击，确保公平。",
+    "Each buyback moves the price at most 1.5%, runs 10 minutes apart, and fills no lower than 90% of the 10-minute TWAP — MEV sandwiches are blocked at the contract level.",
   ],
-  "burn.creationFeeNote": [
-    "创建费直接进入生态多签地址。协议那 0.25% 池费分成每 7 天自动结算一次：76% 转入生态储备金多签、4% 转入开发团队地址、20% 划入回购金，随后分批买入 $ARCL 打进销毁地址；平台币未上线前，回购部分留在合约里累积，配置后开始买入销毁。",
-    "Creation fees go straight to the ecosystem multisig. The protocol's 0.25% fee share settles automatically every 7 days: 76% to the reserve multisig, 4% to the dev team wallet, 20% is reserved and then spent in slices buying $ARCL to burn; until the platform token is live, the buyback part accrues as a reserve.",
-  ],
+  "burn.core.splitTitle": ["交易费用分配（每笔 1% 池费）", "Trading-fee allocation (1% pool fee per trade)"],
+  "burn.core.creator": ["项目方 / 创作者", "Project / creator"],
+  "burn.core.buyback": ["ARCL 回购销毁", "ARCL buyback & burn"],
+  "burn.core.reserve": ["储备金", "Reserve"],
+  "burn.core.dev": ["开发团队", "Dev team"],
   "burn.notStarted": [
     "平台币配置后，回购将从待回购金额开始分批执行",
     "Once the platform token is configured, buybacks start spending the reserve in slices",

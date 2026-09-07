@@ -16,19 +16,19 @@ import { Empty, LiveCountdown, PctChange, SectionTitle, Stat, TimeAgo, TokenAvat
 
 const SUPPLY = 1_000_000_000;
 
-/** Three-segment split bar of the protocol share; colours come from the theme (--split-eco / --split-buyback). */
-function SplitBar({ eco, buyback, dev }: { eco: number; buyback: number; dev: number }) {
+/** Split of the whole 1% pool fee (creator / reserve / buyback / dev), values in % of that fee (75 / 19 / 5 / 1). */
+function SplitBar({ creator, eco, buyback, dev }: { creator: number; eco: number; buyback: number; dev: number }) {
+  const seg = (w: number, bg: string, fg: string, label: string) => (
+    <div className="relative flex items-center justify-center overflow-hidden text-[11px] font-semibold" style={{ width: `${w}%`, background: bg, color: fg, boxShadow: "inset 0 1px 0 rgba(255,255,255,.25)" }} title={label}>
+      <span className="relative font-mono tabular">{w >= 4 ? `${w}%` : ""}</span>
+    </div>
+  );
   return (
     <div className="flex h-7 w-full gap-0.5 overflow-hidden rounded-lg">
-      <div className="relative flex items-center justify-center overflow-hidden text-xs font-semibold text-black" style={{ width: `${eco}%`, background: "var(--split-eco)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.35)" }}>
-        <span className="relative font-mono tabular">{eco}%</span>
-      </div>
-      <div className="relative flex items-center justify-center overflow-hidden text-xs font-semibold text-white" style={{ width: `${buyback}%`, background: "var(--split-buyback)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.25)" }}>
-        <span className="relative font-mono tabular">{buyback}%</span>
-      </div>
-      <div className="relative flex items-center justify-center overflow-hidden text-[10px] font-semibold text-white" style={{ width: `${dev}%`, background: "var(--muted-foreground)" }} title={`${dev}%`}>
-        <span className="relative font-mono tabular">{dev}</span>
-      </div>
+      {seg(creator, "var(--primary)", "var(--primary-foreground)", `creator ${creator}%`)}
+      {seg(eco, "var(--split-eco)", "#000", `reserve ${eco}%`)}
+      {seg(buyback, "var(--split-buyback)", "#fff", `buyback ${buyback}%`)}
+      {seg(dev, "var(--muted-foreground)", "#fff", `dev ${dev}%`)}
     </div>
   );
 }
@@ -84,9 +84,11 @@ export default function BurnPage() {
   const due = tr ? nowSec >= nextAt : false;
   // progress through the 7-day window
   const cycleProgress = tr && nextAt > 0 && nowSec > 0 ? Math.min(100, Math.max(0, ((nowSec - (nextAt - interval)) / interval) * 100)) : 0;
-  const buybackPct = (tr?.buybackBps ?? 2000) / 100;
-  const ecoPct = (tr?.ecoBps ?? 7600) / 100;
-  const devPct = (tr?.devBps ?? 400) / 100;
+  // protocol share is 25% of the 1% pool fee; express every slice as a share of that 1% fee (19 / 5 / 1, creator 75)
+  const ofFee = (bps: number) => Math.round(bps * 25) / 10_000;
+  const buybackOfTrade = ofFee(tr?.buybackBps ?? 2000);
+  const ecoOfTrade = ofFee(tr?.ecoBps ?? 7600);
+  const devOfTrade = ofFee(tr?.devBps ?? 400);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -125,10 +127,10 @@ export default function BurnPage() {
                   ) : "—"}
                 </div>
                 <div className="mt-2 space-y-1 text-xs">
-                  <div className="flex justify-between gap-2"><span className="text-muted-foreground"><Sprout size={11} className="mr-1 inline" style={{ color: "var(--split-eco)" }} />{t("burn.eco")} {ecoPct}%</span><span className="font-mono">{tr ? shortAddr(tr.ecoFund, 6, 4) : "…"}</span></div>
-                  <div className="flex justify-between gap-2"><span className="text-muted-foreground"><Flame size={11} className="mr-1 inline" style={{ color: "var(--split-buyback)" }} />{t("burn.buyback")} {buybackPct}%</span><span className="font-mono">0x000…dEaD</span></div>
-                  <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("burn.dev")} {devPct}%</span><span className="font-mono">{tr ? shortAddr(tr.devFund, 6, 4) : "…"}</span></div>
-                  <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("burn.reserve")}</span><span className="font-mono">{fmtUsd(reserve)}</span></div>
+                  {/* all shares expressed against the 1% pool fee of every trade */}
+                  <div className="flex justify-between gap-2"><span className="text-muted-foreground"><Sprout size={11} className="mr-1 inline" style={{ color: "var(--split-eco)" }} />{t("burn.eco")} {ecoOfTrade}%</span><span className="font-mono">{tr ? shortAddr(tr.ecoFund, 6, 4) : "…"}</span></div>
+                  <div className="flex justify-between gap-2"><span className="text-muted-foreground"><Flame size={11} className="mr-1 inline" style={{ color: "var(--split-buyback)" }} />{t("burn.buyback")} {buybackOfTrade}%</span><span className="font-mono">0x000…dEaD</span></div>
+                  <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("burn.dev")} {devOfTrade}%</span><span className="font-mono">{tr ? shortAddr(tr.devFund, 6, 4) : "…"}</span></div>
                   {reserve > 0 && pt && (
                     <div className="flex justify-between gap-2">
                       <span className="text-muted-foreground">{t("burn.nextSlice")}</span>
@@ -141,10 +143,19 @@ export default function BurnPage() {
                 </div>
               </div>
             </div>
-            <div className="mt-3"><SplitBar eco={ecoPct} buyback={buybackPct} dev={devPct} /></div>
-            <p className="mt-1 text-[10px] text-muted-foreground">{t("burn.splitOfTrade")}</p>
-            <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">{t("burn.creationFeeNote")}</p>
-            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground"><Lock size={10} className="mr-1 inline" />{t("burn.slicing")}</p>
+            <div className="mt-3"><SplitBar creator={75} eco={ecoOfTrade} buyback={buybackOfTrade} dev={devOfTrade} /></div>
+            <div className="mt-3 rounded-lg bg-muted/60 p-3 text-[11px] leading-relaxed text-secondary-foreground">
+              <div className="flex items-center gap-1 font-semibold text-foreground"><Flame size={12} className="text-burn" /> {t("burn.core.title")}</div>
+              <p className="mt-1">{t("burn.core.auto")}</p>
+              <p className="mt-1"><Lock size={10} className="mr-1 inline" />{t("burn.core.guard")}</p>
+              <div className="mt-2 font-semibold text-foreground">{t("burn.core.splitTitle")}</div>
+              <ul className="mt-0.5 space-y-0.5">
+                <li>· {t("burn.core.creator")}：75%</li>
+                <li>· {t("burn.core.buyback")}：5%</li>
+                <li>· {t("burn.core.reserve")}：19%</li>
+                <li>· {t("burn.core.dev")}：1%</li>
+              </ul>
+            </div>
             <Button variant="outline" size="sm" className="mt-3 w-full" asChild>
               <a href={addrUrl(ADDR.treasury)} target="_blank" rel="noreferrer"><ExternalLink /> ArcScan</a>
             </Button>
