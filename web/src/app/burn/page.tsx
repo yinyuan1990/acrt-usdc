@@ -70,7 +70,8 @@ function RingGauge({ value, ready }: { value: number; ready: boolean }) {
 }
 
 export default function BurnPage() {
-  const { t } = useApp();
+  const { t, locale } = useApp();
+  const colon = locale === "zh" ? "：" : ": ";
   const tr = useTreasury().data;
   const s = useStats().data;
   const pending = usd(tr?.pendingRevenueUsdc);
@@ -150,10 +151,10 @@ export default function BurnPage() {
               <p className="mt-1"><Lock size={10} className="mr-1 inline" />{t("burn.core.guard")}</p>
               <div className="mt-2 font-semibold text-foreground">{t("burn.core.splitTitle")}</div>
               <ul className="mt-0.5 space-y-0.5">
-                <li>· {t("burn.core.creator")}：75%</li>
-                <li>· {t("burn.core.buyback")}：5%</li>
-                <li>· {t("burn.core.reserve")}：19%</li>
-                <li>· {t("burn.core.dev")}：1%</li>
+                <li>· {t("burn.core.creator")}{colon}75%</li>
+                <li>· {t("burn.core.buyback")}{colon}5%</li>
+                <li>· {t("burn.core.reserve")}{colon}19%</li>
+                <li>· {t("burn.core.dev")}{colon}1%</li>
               </ul>
             </div>
             <Button variant="outline" size="sm" className="mt-3 w-full" asChild>
