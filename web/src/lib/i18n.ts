@@ -127,7 +127,7 @@ const dict = {
     "Only your buy executes in the launch block, ahead of bots.",
   ],
   "create.fee": ["创建费", "Creation fee"],
-  "create.feeWaived": ["白名单减免", "Whitelist waived"],
+  "create.feeFixed": ["固定，合约写死", "Fixed in the contract"],
   "create.feeFree": ["当前免费", "Currently free"],
   "create.preview": ["预览", "Preview"],
   "create.summary": ["费用摘要", "Summary"],

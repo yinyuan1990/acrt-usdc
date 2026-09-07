@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { BadgeCheck, ImagePlus, Lock, Percent, Rocket, Scale, ShieldCheck, Zap } from "lucide-react";
+import { ImagePlus, Lock, Percent, Rocket, Scale, ShieldCheck, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { useReadContract } from "wagmi";
 import { formatUnits, getAddress, isAddress, parseEventLogs, parseUnits, zeroAddress, type Address } from "viem";
-import { fetchLaunchQuote, uploadLogo, useConfig } from "@/lib/api";
+import { uploadLogo, useConfig } from "@/lib/api";
 import { fmtUsd } from "@/lib/format";
 import { ADDR, SUPPLY_TOKENS, erc20Abi, factoryAbi } from "@/lib/web3";
 import { useTx } from "@/lib/tx";
@@ -71,14 +71,11 @@ export default function CreatePage() {
   };
 
   const me = address as Address | undefined;
-  const feeQ = useReadContract({ address: ADDR.factory, abi: factoryAbi, functionName: "quoteCreationFee", args: me ? [me] : undefined, query: { enabled: !!me } });
   const balQ = useReadContract({ address: ADDR.usdc, abi: erc20Abi, functionName: "balanceOf", args: me ? [me] : undefined, query: { enabled: !!me, refetchInterval: 8000 } });
 
-  const baseFee = cfg ? Number(cfg.params.creationFee) / 1e6 : 1;
-  const feeEnabled = cfg?.params.creationFeeEnabled ?? true;
-  const fee6 = feeQ.data ?? (feeEnabled ? BigInt(Math.round(baseFee * 1e6)) : 0n);
+  // constant on-chain (1 USDC): no switch, no waiver list
+  const fee6 = cfg ? BigInt(cfg.params.creationFee) : 1_000_000n;
   const fee = Number(fee6) / 1e6;
-  const waived = !!me && feeEnabled && fee6 === 0n;
   const buy = parseFloat(initialBuy) || 0;
   const buy6 = (() => { try { return buy > 0 ? parseUnits(String(buy), 6) : 0n; } catch { return 0n; } })();
   const need6 = fee6 + buy6;
@@ -108,8 +105,6 @@ export default function CreatePage() {
     if (!me || !client) return;
     setBusy("approve");
     try {
-      // refresh the caller's fee right before sending (whitelist / fee switch may have changed)
-      await fetchLaunchQuote(me).catch(() => null);
       if (need6 > 0n) {
         const allowance = await client.readContract({ address: ADDR.usdc, abi: erc20Abi, functionName: "allowance", args: [me, ADDR.factory] });
         if (allowance < need6) {
@@ -345,14 +340,7 @@ export default function CreatePage() {
             <CardContent className="space-y-2 text-sm">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">{t("create.fee")}</span>
-                <span className="flex items-center gap-2 font-mono tabular">
-                  {fee === 0 ? (
-                    <>
-                      <span className="text-muted-foreground line-through">{fmtUsd(baseFee)}</span>
-                      <Badge variant="up"><BadgeCheck /> {waived ? t("create.feeWaived") : t("create.feeFree")}</Badge>
-                    </>
-                  ) : fmtUsd(fee)}
-                </span>
+                <span className="flex items-center gap-2 font-mono tabular">{fmtUsd(fee)} <Badge variant="secondary"><Lock /> {t("create.feeFixed")}</Badge></span>
               </div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">{t("create.initialBuy")}</span><span className="font-mono tabular">{fmtUsd(buy)}</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Gas (USDC)</span><span className="font-mono tabular">~$0.2</span></div>

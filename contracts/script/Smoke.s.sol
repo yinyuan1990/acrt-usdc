@@ -66,7 +66,7 @@ contract Smoke is Script {
         bool isToken0 = predicted < usdc;
         console2.log("platform start mcap usdc6", factory.startMcapUsdc());
         LaunchFactory.LaunchParams memory p = _params(firstBuy);
-        uint256 need = factory.quoteCreationFee(me) + firstBuy;
+        uint256 need = factory.creationFee() + firstBuy;
 
         vm.startBroadcast(pk);
         IERC20(usdc).approve(address(factory), need);

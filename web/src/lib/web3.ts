@@ -54,7 +54,7 @@ export const factoryAbi = parseAbi([
   "function maxTaxBps() view returns (uint16)",
   "function feeRecipient() view returns (address)",
   "function launch(LaunchParams p) returns (address token, address pool, uint256 positionId)",
-  "function quoteCreationFee(address account) view returns (uint256)",
+  "function creationFee() view returns (uint256)",
   "function startMcapUsdc() view returns (uint256)",
   "function graduationStatus(address token) view returns (uint256 paired, uint256 threshold, bool graduated)",
   "function markGraduated(address token)",

@@ -104,7 +104,7 @@ export type Comment = { id: number; author: string; text: string; replyTo: numbe
 export type ConfigView = {
   chainId: number;
   addresses: Record<string, string | number>;
-  params: { creationFee: string; creationFeeEnabled: boolean; graduationThreshold: string; protectionBlocks: number; maxHoldBps: number; maxBuyBps: number; startMcapUsdc: string; creatorShareBps: number; poolFee: number; totalLaunches: number; maxTaxBps: number };
+  params: { creationFee: string; graduationThreshold: string; protectionBlocks: number; maxHoldBps: number; maxBuyBps: number; startMcapUsdc: string; creatorShareBps: number; poolFee: number; totalLaunches: number; maxTaxBps: number };
 };
 
 /** Tax helpers (bps → fraction). Buys: pool output is taxed, buyer receives output × (1 − buy). Sells: tax is
@@ -113,7 +113,7 @@ export const isTaxToken = (t: Pick<TokenView, "buyTaxBps" | "sellTaxBps">) => (t
 export const afterBuyTax = (out: bigint, buyTaxBps: number) => out - (out * BigInt(buyTaxBps)) / 10_000n;
 export const sellTaxOn = (amount: bigint, sellTaxBps: number) => (amount * BigInt(sellTaxBps)) / 10_000n;
 export const maxSellable = (balance: bigint, sellTaxBps: number) => (balance * 10_000n) / (10_000n + BigInt(sellTaxBps));
-export type LaunchQuote = { predictedToken: string; isToken0: boolean; startMcapUsdc: string; creationFee: string | null };
+export type LaunchQuote = { startMcapUsdc: string; creationFee: string };
 
 export type AdminToken = TokenView & {
   volume24hUsdc: string; holders: number;
@@ -127,7 +127,7 @@ export type AdminOverview = {
   feeEvents: { time: string; hash: string; token: string; symbol: string; quoteCreator: string; quoteProtocol: string; tokenConverted: string; usdcFromToken: string; creatorPaid: boolean; payout: string; kind: "fee" | "tax_marketing" | "tax_team" }[];
   owners: { factory: string | null; locker: string | null; treasury: string | null };
   params: {
-    creationFee: string; creationFeeEnabled: boolean; graduationThreshold: string; protectionBlocks: number; maxHoldBps: number; maxBuyBps: number; startMcapUsdc: string; maxTaxBps: number; feeRecipient: string | null; lockerTreasury: string | null;
+    creationFee: string; graduationThreshold: string; protectionBlocks: number; maxHoldBps: number; maxBuyBps: number; startMcapUsdc: string; maxTaxBps: number; feeRecipient: string | null; lockerTreasury: string | null;
     treasury: { platformToken: string; ecoFund: string; nextExecuteAt: number; pendingRevenueUsdc: string; buybackReserveUsdc: string; usdcBalance: string };
   };
   keeper: { enabled: boolean; address: string | null; balance: string | null; intervalMs: number; feeThresholdUsdc: string; maxAgeMs: number; lastTick: string | null; entries: { ts: string; action: string; token?: string; detail: string; hash?: string; ok: boolean }[] };

@@ -52,19 +52,39 @@ contract LaunchTest is Base {
         );
     }
 
-    function test_launch_feeWaivedAndDisabled() public {
-        vm.prank(owner);
-        factory.setFeeWaived(creator, true);
+    /// @dev The creation fee is a constant: every launch pays exactly 1 USDC, no switch, no waiver list.
+    function test_launch_creationFeeIsConstant() public {
+        assertEq(factory.creationFee(), 1e6);
         uint256 before = usdc.balanceOf(eco);
         doLaunch(creator, "BBB", 0);
-        assertEq(usdc.balanceOf(eco), before);
-
-        vm.prank(owner);
-        factory.setFeeWaived(creator, false);
-        vm.prank(owner);
-        factory.setCreationFee(2e6, false);
         doLaunch(creator, "CCC", 0);
-        assertEq(usdc.balanceOf(eco), before);
+        assertEq(usdc.balanceOf(eco) - before, 2e6);
+        // a wallet without USDC cannot launch at all
+        address broke = makeAddr("broke");
+        vm.prank(broke);
+        usdc.approve(address(factory), type(uint256).max);
+        LaunchFactory.LaunchParams memory p = launchParams("NOFEE", 0);
+        vm.prank(broke);
+        vm.expectRevert();
+        factory.launch(p);
+    }
+
+    /// @dev Every tunable param is bounded so a hostile owner cannot brick new launches.
+    function test_launch_paramBoundsEnforced() public {
+        vm.startPrank(owner);
+        vm.expectRevert(LaunchFactory.ParamOutOfRange.selector);
+        factory.setLaunchParams(10_000e6, 20, 0, 550, 5_000e6); // hold cap 0% → nobody could buy
+        vm.expectRevert(LaunchFactory.ParamOutOfRange.selector);
+        factory.setLaunchParams(10_000e6, 20, 500, 50, 5_000e6); // buy cap 0.5% < 1% floor
+        vm.expectRevert(LaunchFactory.ParamOutOfRange.selector);
+        factory.setLaunchParams(10_000e6, 7_201, 500, 550, 5_000e6); // window > ~1h
+        vm.expectRevert(LaunchFactory.ParamOutOfRange.selector);
+        factory.setLaunchParams(999e6, 20, 500, 550, 5_000e6); // graduation < 1000 USDC
+        factory.setLaunchParams(1_000e6, 7_200, 100, 100, 500e6); // all at the edges: ok
+        vm.stopPrank();
+        // and the tightest allowed settings still let a launch + first buy through
+        (address token,) = doLaunch(creator, "EDGE", 4e6); // 4 USDC into $500 mcap ≈ 0.8% of supply, under 1%
+        assertGt(LaunchToken(token).balanceOf(creator), 0);
     }
 
     function test_launch_initialBuyGoesToCreator() public {
@@ -387,11 +407,11 @@ contract LaunchTest is Base {
 
     function test_graduation_flagAndEvent() public {
         vm.prank(owner);
-        factory.setLaunchParams(500e6, 20, 500, 550, 5_000e6); // low threshold for the test
+        factory.setLaunchParams(1_000e6, 20, 500, 550, 5_000e6); // lowest allowed threshold for the test
         (address token, address pool) = doLaunch(creator, "MMM", 0);
 
         (uint256 paired, uint256 threshold, bool graduated) = factory.graduationStatus(token);
-        assertEq(threshold, 500e6);
+        assertEq(threshold, 1_000e6);
         assertEq(paired, 0);
         assertFalse(graduated);
         vm.expectRevert(LaunchFactory.NotGraduated.selector);
@@ -399,9 +419,9 @@ contract LaunchTest is Base {
 
         vm.roll(block.number + 30);
         // several buyers so hold caps don't matter after the window anyway
-        buy(buyer, token, 600e6);
+        buy(buyer, token, 1_200e6);
         (paired,, graduated) = factory.graduationStatus(token);
-        assertGe(paired, 500e6);
+        assertGe(paired, 1_000e6);
         assertTrue(graduated);
         assertEq(usdc.balanceOf(pool), paired);
 

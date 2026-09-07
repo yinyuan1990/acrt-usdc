@@ -235,15 +235,13 @@
   <tr><td>地契没有出口</td><td>FeeLocker 源码里搜 <code>safeTransferFrom</code> / <code>transferFrom</code>——没有任何把 NFT 转走的调用。</td></tr>
   <tr><td>代币没有增发 / 黑名单 / 税开关</td><td>LaunchToken 源码 100 行，只有 <code>_update</code> 里一段窗口限购，其它全是 OpenZeppelin 标准 ERC20。</td></tr>
   <tr><td>经济参数写死</td><td>75/25 在发币时快照进 Lock；76/20/4、7 天周期和 10 亿是 <code>constant</code>；税币的税率、两个地址和比例是 <code>immutable</code>。</td></tr>
-  <tr><td>管理员权限清单</td><td>见下表，一共 7 个函数，全部公开。<b>所有收款地址（生态多签 / 创建费收款 / 协议分成收款）部署时写死，管理员改不了。</b></td></tr>
+  <tr><td>管理员权限清单</td><td>见下表，一共 5 个函数，全部公开。创建费 1 USDC、税率上限 10% 都是常量，没有白名单。<b>所有收款地址（生态多签 / 创建费收款 / 协议分成收款）部署时写死，管理员改不了。</b></td></tr>
 </table>
 
 <h3 style="margin-top:24px">管理员（上线前转 Safe 多签）能做的全部事情</h3>
 <table>
   <tr><th>函数</th><th>作用</th><th>影响谁的钱</th></tr>
-  <tr><td><code>Factory.setCreationFee</code></td><td>调创建费 / 开关</td><td class="ok">新发币的创作者，事先可见</td></tr>
-  <tr><td><code>Factory.setFeeWaived</code></td><td>创建费白名单</td><td class="ok">无</td></tr>
-  <tr><td><code>Factory.setLaunchParams</code></td><td>毕业阈值 / 保护窗口 / 限购比例 / 开盘市值（500 – 10,000,000 USDC）</td><td class="ok">只影响之后新发的币</td></tr>
+  <tr><td><code>Factory.setLaunchParams</code></td><td>毕业阈值（≥ 1,000 USDC）/ 保护窗口（≤ 7,200 块）/ 限购比例（≥ 1%）/ 开盘市值（500 – 10,000,000 USDC）——每项都有硬边界</td><td class="ok">只影响之后新发的币；边界保证管理员再怎么改，新币也永远能买卖</td></tr>
   <tr><td><code>Locker.setFactory</code></td><td>部署时一次性接线，之后锁死</td><td class="ok">无</td></tr>
   <tr><td><code>Locker.proposePayout</code> / <code>cancelPayoutProposal</code></td><td>社区接管：提议改某个币的创作者收款地址，48 小时后任何人可 <code>executePayout</code></td><td class="ok">创作者的 75%，但有 48h 延迟且创作者可否决；<code>setPayout</code> 即时路径只有创作者自己能用</td></tr>
   <tr><td><code>Treasury.configure</code></td><td>设平台币地址，<b>只能调一次</b>（再调 revert）</td><td class="ok">无，只决定 20% 买哪个币烧</td></tr>

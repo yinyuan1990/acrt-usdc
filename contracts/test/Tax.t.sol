@@ -28,9 +28,8 @@ contract TaxTest is Base {
         assertEq(t.marketingBps(), 6_000);
         assertEq(t.taxSink(), address(locker));
         assertTrue(t.isTaxToken());
-        // no setter exists (compile-time guarantee); the factory cap only affects future launches
-        vm.prank(owner);
-        factory.setMaxTaxBps(100);
+        // no setter exists on the token or the factory (compile-time guarantee); the cap is a constant
+        assertEq(factory.maxTaxBps(), 1_000);
         assertEq(t.sellTaxBps(), 500);
     }
 
@@ -71,14 +70,9 @@ contract TaxTest is Base {
         vm.expectRevert(LaunchFactory.TaxOutOfRange.selector);
         factory.launch(p);
 
-        // admin can lower/raise the cap within the hard ceiling only
-        vm.prank(owner);
-        vm.expectRevert(LaunchFactory.TaxOutOfRange.selector);
-        factory.setMaxTaxBps(2_501);
-        vm.prank(owner);
-        factory.setMaxTaxBps(2_500);
+        // exactly at the constant cap is allowed
         p.marketingBps = 0;
-        p.sellTaxBps = 2_500;
+        p.sellTaxBps = 1_000;
         vm.prank(creator);
         factory.launch(p);
     }

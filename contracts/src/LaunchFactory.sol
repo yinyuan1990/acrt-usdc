@@ -46,12 +46,17 @@ contract LaunchFactory is Ownable, ReentrancyGuard, IUniswapV3SwapCallback {
     FeeLocker public immutable locker;
     address public immutable treasury;
 
-    // ---------------------------------------------------------------- operational params (new launches only)
-    uint256 public creationFee = 1e6; // 1 USDC
-    bool public creationFeeEnabled = true;
-    mapping(address => bool) public feeWaived;
+    // ---------------------------------------------------------------- fixed economics
+    /// @dev Creation fee, 1 USDC, charged to every launch. Constant: no switch, no waiver list, no setter.
+    uint256 public constant creationFee = 1e6;
+    /// @dev Cap for creator-set buy / sell taxes (each). Constant. 1000 = 10%.
+    uint16 public constant maxTaxBps = 1_000;
     /// @dev Where creation fees are sent (the ecosystem multisig). Fixed at deployment.
     address public immutable feeRecipient;
+
+    // ---------------------------------------------------------------- launch params (owner-tunable, new launches only)
+    // Every one of these is bounded so that even a compromised owner key can only make future launches less
+    // attractive, never break trading or touch anyone's money. See setLaunchParams.
     uint256 public graduationThreshold = 10_000e6; // USDC in pool
     uint256 public protectionBlocks = 20; // ~10s on Arc
     uint16 public maxHoldBps = 500; // 5%
@@ -60,9 +65,11 @@ contract LaunchFactory is Ownable, ReentrancyGuard, IUniswapV3SwapCallback {
     uint256 public startMcapUsdc = 5_000e6;
     uint256 public constant MIN_START_MCAP = 500e6;
     uint256 public constant MAX_START_MCAP = 10_000_000e6;
-    /// @dev Cap for creator-set buy / sell taxes (each), applies to new launches only. 1000 = 10%.
-    uint16 public maxTaxBps = 1_000;
-    uint16 public constant MAX_TAX_CAP = 2_500;
+    uint256 public constant MIN_GRADUATION = 1_000e6;
+    /// @dev Anti-snipe window can never exceed ~1 hour of Arc blocks, so caps always lift.
+    uint256 public constant MAX_PROTECTION_BLOCKS = 7_200;
+    /// @dev Caps can never be set so low that a launch (or its creator's first buy) becomes untradeable.
+    uint16 public constant MIN_CAP_BPS = 100; // 1%
 
     // ---------------------------------------------------------------- state
     struct Launch {
@@ -117,9 +124,9 @@ contract LaunchFactory is Ownable, ReentrancyGuard, IUniswapV3SwapCallback {
         address indexed token, uint16 buyTaxBps, uint16 sellTaxBps, address marketingWallet, address teamWallet, uint16 marketingBps
     );
     event ParamsUpdated();
-    event FeeWaiverSet(address indexed account, bool waived);
 
     error StartMcapOutOfRange(uint256 mcap);
+    error ParamOutOfRange();
     error TaxOutOfRange();
     error ZeroAddress();
     error NoLiquidity();
@@ -154,17 +161,9 @@ contract LaunchFactory is Ownable, ReentrancyGuard, IUniswapV3SwapCallback {
 
     // ---------------------------------------------------------------- admin (affects new launches only)
 
-    function setCreationFee(uint256 fee, bool enabled) external onlyOwner {
-        creationFee = fee;
-        creationFeeEnabled = enabled;
-        emit ParamsUpdated();
-    }
-
-    function setFeeWaived(address account, bool waived) external onlyOwner {
-        feeWaived[account] = waived;
-        emit FeeWaiverSet(account, waived);
-    }
-
+    /// @notice The only tunable knobs. Bounded on purpose: a hostile owner can at worst make new launches open at
+    ///         an odd market cap or keep the anti-snipe caps for an hour — never block trading of an existing token,
+    ///         never move funds. Existing tokens snapshot these values at launch and are unaffected.
     function setLaunchParams(
         uint256 graduationThreshold_,
         uint256 protectionBlocks_,
@@ -172,7 +171,10 @@ contract LaunchFactory is Ownable, ReentrancyGuard, IUniswapV3SwapCallback {
         uint16 maxBuyBps_,
         uint256 startMcapUsdc_
     ) external onlyOwner {
-        require(maxHoldBps_ <= 10_000 && maxBuyBps_ <= 10_000, "bps");
+        if (maxHoldBps_ < MIN_CAP_BPS || maxHoldBps_ > 10_000 || maxBuyBps_ < MIN_CAP_BPS || maxBuyBps_ > 10_000) {
+            revert ParamOutOfRange();
+        }
+        if (protectionBlocks_ > MAX_PROTECTION_BLOCKS || graduationThreshold_ < MIN_GRADUATION) revert ParamOutOfRange();
         if (startMcapUsdc_ < MIN_START_MCAP || startMcapUsdc_ > MAX_START_MCAP) revert StartMcapOutOfRange(startMcapUsdc_);
         graduationThreshold = graduationThreshold_;
         protectionBlocks = protectionBlocks_;
@@ -182,25 +184,14 @@ contract LaunchFactory is Ownable, ReentrancyGuard, IUniswapV3SwapCallback {
         emit ParamsUpdated();
     }
 
-    function setMaxTaxBps(uint16 maxTaxBps_) external onlyOwner {
-        if (maxTaxBps_ > MAX_TAX_CAP) revert TaxOutOfRange();
-        maxTaxBps = maxTaxBps_;
-        emit ParamsUpdated();
-    }
-
     // ---------------------------------------------------------------- launch
-
-    function quoteCreationFee(address account) public view returns (uint256) {
-        if (!creationFeeEnabled || feeWaived[account]) return 0;
-        return creationFee;
-    }
 
     function launch(LaunchParams calldata p) external nonReentrant returns (address token, address pool, uint256 positionId) {
         if (p.buyTaxBps > maxTaxBps || p.sellTaxBps > maxTaxBps || p.marketingBps > 10_000) revert TaxOutOfRange();
 
-        // 1) creation fee → fee recipient (ecosystem multisig)
-        uint256 fee = quoteCreationFee(msg.sender);
-        if (fee > 0) IERC20(usdc).safeTransferFrom(msg.sender, feeRecipient, fee);
+        // 1) creation fee (constant 1 USDC) → fee recipient (ecosystem multisig)
+        uint256 fee = creationFee;
+        IERC20(usdc).safeTransferFrom(msg.sender, feeRecipient, fee);
 
         // 2) token (entire supply minted to this factory)
         token = _deployToken(p);

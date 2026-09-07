@@ -7,8 +7,6 @@ export const factoryAbi = parseAbi([
   "function graduationStatus(address token) view returns (uint256 paired, uint256 threshold, bool graduated)",
   "function markGraduated(address token)",
   "function creationFee() view returns (uint256)",
-  "function creationFeeEnabled() view returns (bool)",
-  "function quoteCreationFee(address) view returns (uint256)",
   "function graduationThreshold() view returns (uint256)",
   "function protectionBlocks() view returns (uint256)",
   "function maxHoldBps() view returns (uint16)",

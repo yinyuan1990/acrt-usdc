@@ -68,11 +68,10 @@ app.get("/api/health", async (c) => {
 });
 
 app.get("/api/config", async (c) => {
-  const [fee, feeOn, thr, prot, maxHold, maxBuy, startMcap, total, maxTax] = await client.multicall({
+  const [fee, thr, prot, maxHold, maxBuy, startMcap, total, maxTax] = await client.multicall({
     allowFailure: false,
     contracts: [
       { address: ADDR.factory, abi: factoryAbi, functionName: "creationFee" },
-      { address: ADDR.factory, abi: factoryAbi, functionName: "creationFeeEnabled" },
       { address: ADDR.factory, abi: factoryAbi, functionName: "graduationThreshold" },
       { address: ADDR.factory, abi: factoryAbi, functionName: "protectionBlocks" },
       { address: ADDR.factory, abi: factoryAbi, functionName: "maxHoldBps" },
@@ -86,8 +85,7 @@ app.get("/api/config", async (c) => {
     chainId: deployments.chainId,
     addresses: deployments,
     params: {
-      creationFee: fee.toString(),
-      creationFeeEnabled: feeOn,
+      creationFee: fee.toString(), // constant 1 USDC
       graduationThreshold: thr.toString(),
       protectionBlocks: Number(prot),
       maxHoldBps: maxHold,
@@ -101,19 +99,18 @@ app.get("/api/config", async (c) => {
   });
 });
 
-/** Helper for the create form: predicted token address/orientation, the platform opening mcap and the caller's fee.
- *  The opening price is fixed by the factory (fair launch) — the form cannot choose it. */
+/** Helper for the create form: the platform opening mcap and the (constant) creation fee. The opening price is
+ *  fixed by the factory (fair launch) — the form cannot choose it. Token addresses are CREATE2 with the previous
+ *  block hash in the salt, so they cannot be predicted ahead of the launch transaction. */
 app.get("/api/launch-quote", async (c) => {
-  const account = c.req.query("account");
-  const [nonce, startMcap] = await Promise.all([
-    client.getTransactionCount({ address: ADDR.factory }),
-    client.readContract({ address: ADDR.factory, abi: factoryAbi, functionName: "startMcapUsdc" }),
-  ]);
-  const { getContractAddress } = await import("viem");
-  const predicted = getContractAddress({ from: ADDR.factory, nonce: BigInt(nonce) });
-  const isToken0 = predicted.toLowerCase() < ADDR.usdc.toLowerCase();
-  const fee = account && isAddress(account) ? await client.readContract({ address: ADDR.factory, abi: factoryAbi, functionName: "quoteCreationFee", args: [getAddress(account)] }) : null;
-  return c.json({ predictedToken: predicted, isToken0, startMcapUsdc: startMcap.toString(), creationFee: fee?.toString() ?? null });
+  const [startMcap, fee] = await client.multicall({
+    allowFailure: false,
+    contracts: [
+      { address: ADDR.factory, abi: factoryAbi, functionName: "startMcapUsdc" },
+      { address: ADDR.factory, abi: factoryAbi, functionName: "creationFee" },
+    ],
+  });
+  return c.json({ startMcapUsdc: startMcap.toString(), creationFee: fee.toString() });
 });
 
 app.get("/api/stats", async (c) => {
@@ -651,7 +648,7 @@ app.get("/api/admin/overview", async (c) => {
   const feeEvents = await sql`select f.ts, f.tx_hash, f.token, t.symbol, f.quote_creator, f.quote_protocol, f.token_converted, f.usdc_from_token, f.creator_paid, f.payout, f.kind
     from fee_events f join tokens t on t.address = f.token order by f.ts desc limit 100`;
 
-  const [fOwner, lOwner, tOwner, lTreasury, fee, feeOn, thr, prot, maxHold, maxBuy, startMcap, ptoken, ecoFund, nextAt, reserve, tBal, maxTax, feeRcpt, pending] = await client.multicall({
+  const [fOwner, lOwner, tOwner, lTreasury, fee, thr, prot, maxHold, maxBuy, startMcap, ptoken, ecoFund, nextAt, reserve, tBal, maxTax, feeRcpt, pending] = await client.multicall({
     allowFailure: true,
     contracts: [
       { address: ADDR.factory, abi: factoryAbi, functionName: "owner" },
@@ -659,7 +656,6 @@ app.get("/api/admin/overview", async (c) => {
       { address: ADDR.treasury, abi: treasuryAbi, functionName: "owner" },
       { address: ADDR.locker, abi: lockerAbi, functionName: "treasury" },
       { address: ADDR.factory, abi: factoryAbi, functionName: "creationFee" },
-      { address: ADDR.factory, abi: factoryAbi, functionName: "creationFeeEnabled" },
       { address: ADDR.factory, abi: factoryAbi, functionName: "graduationThreshold" },
       { address: ADDR.factory, abi: factoryAbi, functionName: "protectionBlocks" },
       { address: ADDR.factory, abi: factoryAbi, functionName: "maxHoldBps" },
@@ -697,7 +693,6 @@ app.get("/api/admin/overview", async (c) => {
     owners: { factory: r<string>(fOwner) ?? null, locker: r<string>(lOwner) ?? null, treasury: r<string>(tOwner) ?? null },
     params: {
       creationFee: (r<bigint>(fee) ?? 0n).toString(),
-      creationFeeEnabled: r<boolean>(feeOn) ?? false,
       graduationThreshold: (r<bigint>(thr) ?? 0n).toString(),
       protectionBlocks: Number(r<bigint>(prot) ?? 0n),
       maxHoldBps: Number(r<number>(maxHold) ?? 0),

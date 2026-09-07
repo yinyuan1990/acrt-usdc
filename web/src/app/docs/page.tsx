@@ -52,7 +52,7 @@ export default function DocsPage() {
     [],
   );
 
-  const creationFee = p ? usd(p.creationFee) : 2;
+  const creationFee = p ? usd(p.creationFee) : 1;
   const startMcap = p ? usd(p.startMcapUsdc) : 5000;
   const threshold = p ? usd(p.graduationThreshold) : 10000;
   const protection = p?.protectionBlocks ?? 20;
@@ -141,7 +141,7 @@ export default function DocsPage() {
               rows={[
                 [L("总供应", "Supply"), "1,000,000,000 (1e9)"],
                 [L("池费率", "Pool fee"), "1% (10000)"],
-                [L("创建费", "Launch fee"), p?.creationFeeEnabled ? `${fmtUsd(creationFee)} USDC` : L("当前免费", "Currently free")],
+                [L("创建费", "Launch fee"), `${fmtUsd(creationFee)} USDC · ${L("合约常量，不可改", "contract constant, immutable")}`],
                 [L("开盘市值", "Opening market cap"), `${fmtUsd(startMcap, { compact: true })} USDC`],
                 [L("创作者首购", "Creator first buy"), L("可选，在发射区块内执行", "Optional, executes inside the launch block")],
                 [L("收款钱包", "Fee wallet"), L("可选，默认为发射钱包", "Optional, defaults to the deploying wallet")],
@@ -231,8 +231,8 @@ export default function DocsPage() {
           <Section id="tax" title={L("税币模式", "Tax mode")}>
             <P>
               {L(
-                `发射时可以选"税币"：在 1% 池费之外，每笔买入和卖出再收一笔由创作者设定的税（各最高 ${maxTaxPct}%，平台上限只影响新发射的代币）。税率和流向写进代币合约的 immutable 字段，发射后任何人——包括平台管理员——都无法修改。标准币的税率为 0，合约不改动任何转账金额。`,
-                `At launch a creator may choose "tax mode": on top of the 1% pool fee, every buy and sell pays a creator-set tax (up to ${maxTaxPct}% each; the platform cap only affects new launches). Rates and allocation are immutable fields on the token contract — nobody, including the platform admin, can change them after launch. Standard tokens have zero tax and never touch transfer amounts.`,
+                `发射时可以选"税币"：在 1% 池费之外，每笔买入和卖出再收一笔由创作者设定的税（各最高 ${maxTaxPct}%，上限是合约常量）。税率和流向写进代币合约的 immutable 字段，发射后任何人——包括平台管理员——都无法修改。标准币的税率为 0，合约不改动任何转账金额。`,
+                `At launch a creator may choose "tax mode": on top of the 1% pool fee, every buy and sell pays a creator-set tax (up to ${maxTaxPct}% each; the cap is a contract constant). Rates and allocation are immutable fields on the token contract — nobody, including the platform admin, can change them after launch. Standard tokens have zero tax and never touch transfer amounts.`,
               )}
             </P>
             <Glossary
@@ -303,7 +303,7 @@ export default function DocsPage() {
               <Facts
                 title={L("可以", "Can")}
                 items={[
-                  L("调整开盘市值、毕业阈值、保护窗口、限购比例、税率上限——只影响之后新发的币", "Change opening mcap, graduation threshold, protection window, buy caps, tax cap — new launches only"),
+                  L("调整开盘市值（$500–$1000 万）、毕业阈值（≥ $1000）、保护窗口（≤ 7200 块）、限购比例（≥ 1%）——都有硬边界，只影响之后新发的币", "Tune opening mcap ($500–$10M), graduation threshold (≥ $1k), protection window (≤ 7200 blocks), buy caps (≥ 1%) — all hard-bounded, new launches only"),
                   L("发起社区接管提案（48h + 创作者可否决）", "Propose a community takeover (48h + creator veto)"),
                   L("配置结算合约的平台币地址（回购标的）——只能设一次", "Configure which platform token the settlement contract buys back — write-once"),
                 ]}
@@ -318,6 +318,7 @@ export default function DocsPage() {
                   L("即时修改创作者收款地址", "Change a creator's payout address instantly"),
                   L("修改任何已发射代币的税率或税费流向", "Change the tax rate or allocation of any launched token"),
                   L("改 75/19/5/1 分配比例、7 天周期、10 亿供应、1% 池费", "Change the 75/19/5/1 split, the 7-day cadence, the 1B supply, or the 1% pool fee"),
+                  L("改 1 USDC 创建费、10% 税率上限，或给任何地址免创建费——都是合约常量，没有白名单", "Change the 1 USDC creation fee or the 10% tax cap, or waive the fee for anyone — both are constants, there is no whitelist"),
                 ]}
               />
             </div>

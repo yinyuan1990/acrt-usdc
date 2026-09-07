@@ -30,7 +30,7 @@ if [ -z "${PLATFORM_TOKEN:-}" ]; then
     echo "start mcap temporarily set to $MCAP (was $CUR_MCAP)"
   fi
 
-  FEE=$($CALL "$FACTORY" 'quoteCreationFee(address)(uint256)' "$DEPLOYER" | awk '{print $1}')
+  FEE=$($CALL "$FACTORY" 'creationFee()(uint256)' | awk '{print $1}')
   $SEND "$USDC" 'approve(address,uint256)' "$FACTORY" $((FEE + FIRST)) >/dev/null
   ZERO=0x0000000000000000000000000000000000000000
   ARGS="(\"ArcLaunch\",\"ARCL\",\"https://arclaunch.top/brand/arcl.png\",\"ArcLaunch platform token. 20% of protocol revenue buys and burns ARCL every 7 days; 80% funds the ecosystem.\",(\"https://arclaunch.top\",\"https://x.com/arclaunch_\",\"https://t.me/ArcLaunchCommunity\",\"\",\"\"),$ZERO,0,0,$ZERO,$ZERO,0,$FIRST,0)"

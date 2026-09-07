@@ -19,7 +19,7 @@ echo "me: $DEPLOYER  usdc: $(bal "$DEPLOYER")"
 if [ "$STEP" = "launch" ]; then
   FIRST=${FIRST_BUY:-3000000}
   echo "platform start mcap (usdc6): $($CALL "$FACTORY" 'startMcapUsdc()(uint256)' | awk '{print $1}')  (token address is CREATE2 w/ prev blockhash — not predictable ahead of time)"
-  FEE=$($CALL "$FACTORY" 'quoteCreationFee(address)(uint256)' "$DEPLOYER" | awk '{print $1}')
+  FEE=$($CALL "$FACTORY" 'creationFee()(uint256)' | awk '{print $1}')
   NEED=$((FEE + FIRST))
   $SEND "$USDC" 'approve(address,uint256)' "$FACTORY" "$NEED" | python3 -c 'import sys,json; r=json.load(sys.stdin); print("approve", r["status"], r["transactionHash"])'
   NAME="${NAME:-Arc Cat}"; SYMBOL="${SYMBOL:-ACAT}"
