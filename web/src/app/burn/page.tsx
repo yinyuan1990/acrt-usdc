@@ -16,19 +16,19 @@ import { Empty, LiveCountdown, PctChange, SectionTitle, Stat, TimeAgo, TokenAvat
 
 const SUPPLY = 1_000_000_000;
 
-/** Split of the whole 1% pool fee (creator / reserve / buyback / dev), values in % of that fee (75 / 19 / 5 / 1). */
+/** Split of the whole 1% pool fee, values in % of that fee (75 / 19 / 5 / 1). The 1% dev slice is too thin to
+ *  render on its own, so it shares the last segment with the buyback and the label reads "5%+1%". */
 function SplitBar({ creator, eco, buyback, dev }: { creator: number; eco: number; buyback: number; dev: number }) {
-  const seg = (w: number, bg: string, fg: string, label: string) => (
-    <div className="relative flex items-center justify-center overflow-hidden text-[11px] font-semibold" style={{ width: `${w}%`, background: bg, color: fg, boxShadow: "inset 0 1px 0 rgba(255,255,255,.25)" }} title={label}>
-      <span className="relative font-mono tabular">{w >= 4 ? `${w}%` : ""}</span>
+  const seg = (w: number, bg: string, fg: string, text: string, title: string) => (
+    <div className="relative flex items-center justify-center overflow-hidden text-[11px] font-semibold" style={{ width: `${w}%`, background: bg, color: fg, boxShadow: "inset 0 1px 0 rgba(255,255,255,.25)" }} title={title}>
+      <span className="relative font-mono tabular">{text}</span>
     </div>
   );
   return (
     <div className="flex h-7 w-full gap-0.5 overflow-hidden rounded-lg">
-      {seg(creator, "var(--primary)", "var(--primary-foreground)", `creator ${creator}%`)}
-      {seg(eco, "var(--split-eco)", "#000", `reserve ${eco}%`)}
-      {seg(buyback, "var(--split-buyback)", "#fff", `buyback ${buyback}%`)}
-      {seg(dev, "var(--muted-foreground)", "#fff", `dev ${dev}%`)}
+      {seg(creator, "var(--primary)", "var(--primary-foreground)", `${creator}%`, `creator ${creator}%`)}
+      {seg(eco, "var(--split-eco)", "#000", `${eco}%`, `reserve ${eco}%`)}
+      {seg(buyback + dev, "linear-gradient(90deg, var(--split-buyback) 0 83%, var(--muted-foreground) 83% 100%)", "#fff", `${buyback}%+${dev}%`, `buyback ${buyback}% + dev ${dev}%`)}
     </div>
   );
 }
@@ -150,12 +150,21 @@ export default function BurnPage() {
               <p className="mt-1">{t("burn.core.auto")}</p>
               <p className="mt-1"><Lock size={10} className="mr-1 inline" />{t("burn.core.guard")}</p>
               <div className="mt-2 font-semibold text-foreground">{t("burn.core.splitTitle")}</div>
-              <ul className="mt-0.5 space-y-0.5">
-                <li>· {t("burn.core.creator")}{colon}75%</li>
-                <li>· {t("burn.core.buyback")}{colon}5%</li>
-                <li>· {t("burn.core.reserve")}{colon}19%</li>
-                <li>· {t("burn.core.dev")}{colon}1%</li>
-              </ul>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                {(
+                  [
+                    ["burn.core.creator", 75, "var(--primary)"],
+                    ["burn.core.buyback", buybackOfTrade, "var(--split-buyback)"],
+                    ["burn.core.reserve", ecoOfTrade, "var(--split-eco)"],
+                    ["burn.core.dev", devOfTrade, "var(--muted-foreground)"],
+                  ] as const
+                ).map(([k, v, color]) => (
+                  <span key={k} className="inline-flex items-center gap-1 whitespace-nowrap">
+                    <span className="inline-block size-2 rounded-sm" style={{ background: color }} />
+                    {t(k)}{colon}<span className="font-mono font-semibold text-foreground">{v}%</span>
+                  </span>
+                ))}
+              </div>
             </div>
             <Button variant="outline" size="sm" className="mt-3 w-full" asChild>
               <a href={addrUrl(ADDR.treasury)} target="_blank" rel="noreferrer"><ExternalLink /> ArcScan</a>
