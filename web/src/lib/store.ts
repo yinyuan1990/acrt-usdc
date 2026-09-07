@@ -35,12 +35,13 @@ export const themeStore = createStore<Theme>(
   "arc",
 );
 
+// English by default; Chinese only when the user picked it (or arrived via ?lang=zh).
 export const localeStore = createStore<Locale>(
   () => {
     try {
-      return localStorage.getItem("arclaunch.locale") === "en" ? "en" : "zh";
+      return localStorage.getItem("arclaunch.locale") === "zh" ? "zh" : "en";
     } catch {
-      return "zh";
+      return "en";
     }
   },
   (v) => {
@@ -48,8 +49,35 @@ export const localeStore = createStore<Locale>(
       localStorage.setItem("arclaunch.locale", v);
     } catch {}
   },
-  "zh",
+  "en",
 );
+
+/** One-second clock for live countdowns; only ticks while something subscribes. */
+const secListeners = new Set<Listener>();
+let secTimer: ReturnType<typeof setInterval> | null = null;
+let secNow = 0;
+
+export const secondClockStore = {
+  subscribe(l: Listener) {
+    secListeners.add(l);
+    if (!secTimer) {
+      secNow = Date.now();
+      secTimer = setInterval(() => {
+        secNow = Date.now();
+        secListeners.forEach((fn) => fn());
+      }, 1000);
+    }
+    return () => {
+      secListeners.delete(l);
+      if (secListeners.size === 0 && secTimer) {
+        clearInterval(secTimer);
+        secTimer = null;
+      }
+    };
+  },
+  get: (): number | null => (secNow ||= Date.now()),
+  getServer: (): number | null => null,
+};
 
 /** Shared clock that ticks every 15s; server snapshot is null so SSR renders a placeholder. */
 const clockListeners = new Set<Listener>();

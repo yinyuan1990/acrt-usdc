@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, ArrowUpDown, Crown, Flame, LayoutGrid, Rows3 } from "lucide-react";
-import { progressOf, usd, useStats, useTokens } from "@/lib/api";
-import { fmtNum, fmtUsd } from "@/lib/format";
+import { ArrowRight, ArrowUpDown, Crown, Flame, LayoutGrid, Rows3, Star } from "lucide-react";
+import { progressOf, usd, useTokens, type TokenWindow } from "@/lib/api";
+import { useWatchlist } from "@/lib/watchlist";
+import { fmtUsd } from "@/lib/format";
 import { useApp } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,26 +13,28 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Empty, PctChange, SectionTitle, Stat, TokenAvatar } from "@/components/shared";
+import { Empty, PctChange, SectionTitle, TokenAvatar } from "@/components/shared";
 import { TokenCard } from "@/components/token/token-card";
 import { PulseView } from "@/components/token/pulse-view";
 
-type Filter = "trending" | "new" | "graduating" | "graduated";
-type Sort = "volume" | "mcap" | "created" | "progress";
+type Filter = "trending" | "new" | "graduating" | "graduated" | "watchlist";
+type Sort = "volume" | "mcap" | "created" | "oldest" | "progress";
 type View = "grid" | "pulse";
 
 export default function ExplorePage() {
   const { t } = useApp();
   const [filter, setFilter] = useState<Filter>("trending");
   const [sort, setSort] = useState<Sort>("volume");
+  const [window, setWindow] = useState<TokenWindow>("24h");
   const [view, setView] = useState<View>("grid");
+  const watch = useWatchlist();
 
   const apiSort = filter === "new" ? "new" : filter === "graduating" ? "progress" : sort === "created" ? "new" : sort;
   const apiFilter = filter === "graduating" ? "graduating" : filter === "graduated" ? "graduated" : "all";
-  const { data: list, isLoading } = useTokens(apiSort, apiFilter);
+  const { data: fetched, isLoading } = useTokens(apiSort, apiFilter, window);
   const allQ = useTokens("volume", "all");
   const all = useMemo(() => allQ.data ?? [], [allQ.data]);
-  const stats = useStats().data;
+  const list = useMemo(() => (filter === "watchlist" ? (fetched ?? []).filter((x) => watch.has(x.address)) : fetched), [fetched, filter, watch]);
 
   const king = useMemo(() => [...all].filter((x) => !x.graduated).sort((a, b) => progressOf(b) - progressOf(a))[0], [all]);
 
@@ -39,8 +42,10 @@ export default function ExplorePage() {
     volume: t("explore.sort.volume"),
     mcap: t("explore.sort.mcap"),
     created: t("explore.sort.created"),
+    oldest: t("explore.sort.oldest"),
     progress: t("explore.sort.progress"),
   };
+  const windowLabel: Record<TokenWindow, string> = { "24h": t("explore.window.24h"), "7d": t("explore.window.7d"), all: t("explore.window.all") };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -111,14 +116,6 @@ export default function ExplorePage() {
         )}
       </section>
 
-      {/* Platform stats */}
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label={t("explore.stat.launched")} value={stats ? fmtNum(stats.launched24h) : "…"} sub={stats ? `${t("common.total")} ${fmtNum(stats.tokens)}` : undefined} />
-        <Stat label={t("explore.stat.volume")} value={stats ? fmtUsd(usd(stats.volume24hUsdc), { compact: true }) : "…"} />
-        <Stat label={t("explore.stat.fees")} value={stats ? fmtUsd(usd(stats.fees24hUsdc), { compact: true }) : "…"} tone="primary" />
-        <Stat label={t("burn.treasury")} value={stats ? fmtUsd(usd(stats.treasuryUsdc), { compact: true }) : "…"} tone="gold" />
-      </section>
-
       {/* List */}
       <section>
         <SectionTitle
@@ -132,6 +129,14 @@ export default function ExplorePage() {
                       <TabsTrigger value="new">{t("common.new")}</TabsTrigger>
                       <TabsTrigger value="graduating">{t("common.graduating")}</TabsTrigger>
                       <TabsTrigger value="graduated">{t("common.graduated")}</TabsTrigger>
+                      <TabsTrigger value="watchlist" title={t("explore.watchlist")}><Star size={13} className={watch.list.length ? "fill-gold text-gold" : undefined} /><span className="hidden sm:inline">{t("explore.watchlist")}</span></TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  <Tabs value={window} onValueChange={(v) => setWindow(v as TokenWindow)}>
+                    <TabsList>
+                      {(Object.keys(windowLabel) as TokenWindow[]).map((w) => (
+                        <TabsTrigger key={w} value={w} className="font-mono text-xs">{windowLabel[w]}</TabsTrigger>
+                      ))}
                     </TabsList>
                   </Tabs>
                   <DropdownMenu>
@@ -173,11 +178,11 @@ export default function ExplorePage() {
               ))}
             </div>
           ) : !list || list.length === 0 ? (
-            <Empty>{t("common.noData")}</Empty>
+            <Empty>{filter === "watchlist" ? t("explore.watchlistEmpty") : t("common.noData")}</Empty>
           ) : (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {list.map((tok) => (
-                <TokenCard key={tok.address} token={tok} />
+                <TokenCard key={tok.address} token={tok} window={window} />
               ))}
             </div>
           )

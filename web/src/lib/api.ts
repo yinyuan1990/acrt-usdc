@@ -11,7 +11,7 @@ export type TokenView = {
   symbol: string;
   logo: string;
   description: string;
-  socials: { website: string; twitter: string; telegram: string };
+  socials: { website: string; twitter: string; telegram: string; discord: string; farcaster: string };
   deployer: string;
   payout: string;
   pool: string;
@@ -31,14 +31,46 @@ export type TokenView = {
   feesUsdcTotal: string;
   feesCreatorUsdcTotal: string;
   lastDistributedAt: string | null;
+  /** tax mode: creator-set at launch, immutable. 0/0 = standard token */
+  buyTaxBps: number;
+  sellTaxBps: number;
+  taxMarketingWallet: string;
+  taxTeamWallet: string;
+  /** share of the tax to the marketing wallet; the rest goes to the team wallet */
+  taxMarketingBps: number;
+  taxUsdcTotal: string;
   // list/detail extras
   volume24hUsdc?: string;
   trades24h?: number;
+  /** volume over the requested `window` (list endpoint only) */
+  volumeUsdc?: string;
+  tradesWindow?: number;
   holders?: number;
   change24h?: number | null;
   poolUsdc?: string;
+  poolTokens?: string;
+  liquidityUsd?: number;
+  burnedTokens?: string;
+  fdvUsd?: number;
+  circulatingMcapUsd?: number;
   protectionActive?: boolean;
   currentBlock?: number;
+  /** creator endpoint: live takeover proposal against this token */
+  pendingPayout?: { newPayout: string; eta: number } | null;
+};
+
+export type Health = { ok: boolean; lastBlock: number | null; head: number | null; chainId: number };
+export type CtoRequest = {
+  id: number; token: string; symbol: string; logo: string; payout: string;
+  requester: string; newPayout: string; contact: string; reason: string; status: "open" | "approved" | "rejected"; time: string;
+};
+export type TokenWindow = "24h" | "7d" | "all";
+export type Analytics = {
+  latestDay: string;
+  day: { volumeUsdc: string; trades: number; traders: number; launches: number; feesUsdc: string };
+  allTime: { volumeUsdc: string; trades: number; traders: number; launches: number; graduated: number; feesUsdc: string; feesCreatorUsdc: string; creationFeesUsdc: string; buybackUsdc: string; burned: string };
+  daily: { day: string; launches: number; volumeUsdc: string; trades: number; feesUsdc: string }[];
+  source: { factory: string; locker: string; treasury: string; chainId: number };
 };
 
 export type Trade = { hash: string; time: string; side: "buy" | "sell"; usdc: string; tokens: string; price: number; mcapUsd: number; wallet: string; block: number };
@@ -52,7 +84,7 @@ export type Stats = {
 };
 export type Creator = {
   address: string; tokens: TokenView[];
-  payouts: { time: string; hash: string; usdc: string; tokens: string; paid: boolean; token: string; symbol: string; logo: string }[];
+  payouts: { time: string; hash: string; usdc: string; usdcFromToken: string; paid: boolean; kind: "fee" | "tax_marketing" | "tax_team"; token: string; symbol: string; logo: string }[];
   earnedUsdc: string; pendingEstimateUsdc: string; claimableUsdc: string;
 };
 export type WalletView = {
@@ -63,7 +95,8 @@ export type WalletView = {
 export type Burn = { hash: string; time: string; usdcSpent: string; tokensBurned: string; usdcToEco: string };
 export type TreasuryView = {
   address: string; usdcBalance: string; fromCreationFees: string; fromTradeFees: string; buybackBps: number; ecoBps: number;
-  executeThreshold: string; maxPerExecute: string; ecoFund: string;
+  intervalSec: number; lastExecutedAt: number; nextExecuteAt: number; pendingRevenueUsdc: string; buybackReserveUsdc: string; feeRecipient: string; ecoFund: string;
+  buybackCooldownSec: number; nextBuybackAt: number; nextBuybackAmountUsdc: string;
   totalBoughtBackUsdc: string; totalBurned: string; totalToEcoUsdc: string;
   platformToken: TokenView | null; burns: Burn[];
 };
@@ -71,9 +104,36 @@ export type Comment = { id: number; author: string; text: string; replyTo: numbe
 export type ConfigView = {
   chainId: number;
   addresses: Record<string, string | number>;
-  params: { creationFee: string; creationFeeEnabled: boolean; graduationThreshold: string; protectionBlocks: number; maxHoldBps: number; maxBuyBps: number; creatorShareBps: number; poolFee: number; totalLaunches: number };
+  params: { creationFee: string; creationFeeEnabled: boolean; graduationThreshold: string; protectionBlocks: number; maxHoldBps: number; maxBuyBps: number; startMcapUsdc: string; creatorShareBps: number; poolFee: number; totalLaunches: number; maxTaxBps: number };
 };
-export type LaunchQuote = { predictedToken: string; isToken0: boolean; sqrtPriceX96: string; creationFee: string | null };
+
+/** Tax helpers (bps → fraction). Buys: pool output is taxed, buyer receives output × (1 − buy). Sells: tax is
+ *  charged on top, so selling N costs N × (1 + sell) and the max sellable is balance / (1 + sell). */
+export const isTaxToken = (t: Pick<TokenView, "buyTaxBps" | "sellTaxBps">) => (t.buyTaxBps ?? 0) > 0 || (t.sellTaxBps ?? 0) > 0;
+export const afterBuyTax = (out: bigint, buyTaxBps: number) => out - (out * BigInt(buyTaxBps)) / 10_000n;
+export const sellTaxOn = (amount: bigint, sellTaxBps: number) => (amount * BigInt(sellTaxBps)) / 10_000n;
+export const maxSellable = (balance: bigint, sellTaxBps: number) => (balance * 10_000n) / (10_000n + BigInt(sellTaxBps));
+export type LaunchQuote = { predictedToken: string; isToken0: boolean; startMcapUsdc: string; creationFee: string | null };
+
+export type AdminToken = TokenView & {
+  volume24hUsdc: string; holders: number;
+  volumeSinceDistribute: string; creationFeePaid: string; initialBuyUsdc: string;
+  unconvertedTokenFees: string; pendingPayout: { newPayout: string; eta: number } | null; claimableUsdc: string;
+};
+export type AdminOverview = {
+  totals: Record<"tokens" | "graduated" | "launched_24h" | "volume_total" | "volume_24h" | "trades_total" | "traders" | "holders" | "fees_total" | "fees_creator" | "fees_protocol" | "fees_from_token" | "payouts_parked" | "creation_fees" | "buyback_usdc" | "burned" | "to_eco" | "comments", string>;
+  daily: { day: string; launches: number; volume: string; trades: number; fees: string; creationFees: string }[];
+  tokens: AdminToken[];
+  feeEvents: { time: string; hash: string; token: string; symbol: string; quoteCreator: string; quoteProtocol: string; tokenConverted: string; usdcFromToken: string; creatorPaid: boolean; payout: string; kind: "fee" | "tax_marketing" | "tax_team" }[];
+  owners: { factory: string | null; locker: string | null; treasury: string | null };
+  params: {
+    creationFee: string; creationFeeEnabled: boolean; graduationThreshold: string; protectionBlocks: number; maxHoldBps: number; maxBuyBps: number; startMcapUsdc: string; maxTaxBps: number; feeRecipient: string | null; lockerTreasury: string | null;
+    treasury: { platformToken: string; ecoFund: string; nextExecuteAt: number; pendingRevenueUsdc: string; buybackReserveUsdc: string; usdcBalance: string };
+  };
+  keeper: { enabled: boolean; address: string | null; balance: string | null; intervalMs: number; feeThresholdUsdc: string; maxAgeMs: number; lastTick: string | null; entries: { ts: string; action: string; token?: string; detail: string; hash?: string; ok: boolean }[] };
+  sync: { lastBlock: number | null; head: number | null; startBlock: number; rpc: string };
+  addresses: Record<string, string | number>;
+};
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
@@ -88,8 +148,15 @@ export const tok = (raw?: string | null) => (raw ? Number(raw) / 1e18 : 0);
 
 export const useStats = () => useQuery({ queryKey: ["stats"], queryFn: () => get<Stats>("/stats"), refetchInterval: 10_000 });
 export const useConfig = () => useQuery({ queryKey: ["config"], queryFn: () => get<ConfigView>("/config"), staleTime: 60_000 });
-export const useTokens = (sort: string, filter: string) =>
-  useQuery({ queryKey: ["tokens", sort, filter], queryFn: () => get<TokenView[]>(`/tokens?sort=${sort}&filter=${filter}&limit=100`), refetchInterval: 8_000 });
+export const useTokens = (sort: string, filter: string, window: TokenWindow = "24h") =>
+  useQuery({ queryKey: ["tokens", sort, filter, window], queryFn: () => get<TokenView[]>(`/tokens?sort=${sort}&filter=${filter}&window=${window}&limit=100`), refetchInterval: 8_000 });
+export const useAnalytics = () => useQuery({ queryKey: ["analytics"], queryFn: () => get<Analytics>("/analytics"), refetchInterval: 60_000 });
+export const useHealth = () =>
+  useQuery({ queryKey: ["health"], queryFn: () => get<Health>("/health"), refetchInterval: 15_000, retry: 1 });
+export const useTokenCto = (address?: string) =>
+  useQuery({ queryKey: ["cto", address], queryFn: () => get<CtoRequest[]>(`/tokens/${address}/cto`), enabled: !!address, staleTime: 30_000 });
+export const useAdminCto = (enabled: boolean) =>
+  useQuery({ queryKey: ["admin", "cto"], queryFn: () => get<CtoRequest[]>("/admin/cto"), enabled, refetchInterval: 30_000 });
 // Right after a launch the indexer can lag the chain by a few seconds → keep retrying 404s for ~30s.
 export const useToken = (address?: string) =>
   useQuery({ queryKey: ["token", address], queryFn: () => get<TokenView>(`/tokens/${address}`), enabled: !!address, refetchInterval: 5_000, retry: 15, retryDelay: 2_000 });
@@ -105,8 +172,10 @@ export const useCreator = (address?: string) =>
 export const useWallet = (address?: string) =>
   useQuery({ queryKey: ["wallet", address], queryFn: () => get<WalletView>(`/wallet/${address}`), enabled: !!address, refetchInterval: 10_000 });
 export const useTreasury = () => useQuery({ queryKey: ["treasury"], queryFn: () => get<TreasuryView>("/treasury"), refetchInterval: 15_000 });
-export const fetchLaunchQuote = (mcapUsd: number, account?: string) =>
-  get<LaunchQuote>(`/launch-quote?mcapUsd=${mcapUsd}${account ? `&account=${account}` : ""}`);
+export const useAdminOverview = (enabled: boolean) =>
+  useQuery({ queryKey: ["admin", "overview"], queryFn: () => get<AdminOverview>("/admin/overview"), enabled, refetchInterval: 15_000 });
+export const fetchLaunchQuote = (account?: string) =>
+  get<LaunchQuote>(`/launch-quote${account ? `?account=${account}` : ""}`);
 export const useComments = (address?: string, viewer?: string) =>
   useQuery({ queryKey: ["comments", address, viewer], queryFn: () => get<Comment[]>(`/tokens/${address}/comments${viewer ? `?viewer=${viewer}` : ""}`), enabled: !!address, refetchInterval: 8_000 });
 
@@ -119,6 +188,10 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 export const postComment = (token: string, body: { author: string; text: string; replyTo: number | null; ts: number; signature: string }) =>
   post<{ id: number; time: string }>(`/tokens/${token}/comments`, body);
 export const postLike = (id: number, body: { author: string; ts: number; signature: string }) => post<{ liked: boolean; likes: number }>(`/comments/${id}/like`, body);
+export const postCto = (body: { token: string; requester: string; newPayout: string; contact: string; reason: string; ts: number; signature: string }) =>
+  post<{ id: number; time: string }>("/cto", body);
+export const postCtoStatus = (id: number, body: { author: string; status: CtoRequest["status"]; ts: number; signature: string }) =>
+  post<{ id: number; status: string }>(`/admin/cto/${id}/status`, body);
 export async function uploadLogo(file: File): Promise<{ url: string }> {
   const fd = new FormData();
   fd.append("file", file);
@@ -132,6 +205,9 @@ export async function uploadLogo(file: File): Promise<{ url: string }> {
 export const commentMessage = (token: string, text: string, ts: number, replyTo?: number | null) =>
   `ArcLaunch comment\ntoken: ${token.toLowerCase()}\nreplyTo: ${replyTo ?? "-"}\nts: ${ts}\n\n${text}`;
 export const likeMessage = (commentId: number, ts: number) => `ArcLaunch like\ncomment: ${commentId}\nts: ${ts}`;
+export const ctoMessage = (token: string, newPayout: string, contact: string, reason: string, ts: number) =>
+  `ArcLaunch CTO request\ntoken: ${token.toLowerCase()}\nnewPayout: ${newPayout.toLowerCase()}\ncontact: ${contact}\nts: ${ts}\n\n${reason}`;
+export const ctoReviewMessage = (id: number, status: string, ts: number) => `ArcLaunch CTO review\nrequest: ${id}\nstatus: ${status}\nts: ${ts}`;
 
 /** Progress toward graduation, 0–100. */
 export const progressOf = (t: TokenView) => {

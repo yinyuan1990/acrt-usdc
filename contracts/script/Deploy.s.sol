@@ -9,54 +9,85 @@ import {LaunchFactory} from "../src/LaunchFactory.sol";
 
 /// Deploys our own Uniswap V3 (official bytecode) plus the ArcLaunch contracts.
 ///   USDC     — native USDC ERC-20 interface on Arc: 0x3600000000000000000000000000000000000000
-///   OWNER    — admin (defaults to deployer); move to a Safe multisig before mainnet
+///   OWNER    — admin (defaults to deployer); transferOwnership to the Safe once mainnet checks pass
+///   ECO_FUND — ecosystem multisig (defaults to deployer). IMMUTABLE: receives 80% of protocol revenue and every
+///              creation fee; nobody can change it after deployment, so on mainnet this must be the Safe.
 contract Deploy is Script {
+    struct Cfg {
+        address deployer;
+        address usdc;
+        address owner;
+        address ecoFund;
+    }
+
+    struct Out {
+        address uniFactory;
+        address nfpm;
+        address router;
+        address quoter;
+        address treasury;
+        address locker;
+        address factory;
+    }
+
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(pk);
-        address usdc = vm.envOr("USDC", address(0x3600000000000000000000000000000000000000));
-        address owner = vm.envOr("OWNER", deployer);
-        string memory outFile = vm.envOr("OUT_FILE", string("deployments/arc-testnet.json"));
+        Cfg memory c;
+        c.deployer = vm.addr(pk);
+        c.usdc = vm.envOr("USDC", address(0x3600000000000000000000000000000000000000));
+        c.owner = vm.envOr("OWNER", c.deployer);
+        c.ecoFund = vm.envOr("ECO_FUND", c.deployer);
 
         vm.startBroadcast(pk);
-
-        address uniFactory = deployCode("vendor/uniswap-v3/UniswapV3Factory.json");
-        address descriptor = address(new SimpleDescriptor());
-        address nfpm =
-            deployCode("vendor/uniswap-v3/NonfungiblePositionManager.json", abi.encode(uniFactory, usdc, descriptor));
-        address router = deployCode("vendor/uniswap-v3/SwapRouter.json", abi.encode(uniFactory, usdc));
-        address quoter = deployCode("vendor/uniswap-v3/QuoterV2.json", abi.encode(uniFactory, usdc));
-
-        Treasury treasury = new Treasury(usdc, router, owner);
-        FeeLocker locker = new FeeLocker(nfpm, address(treasury), owner);
-        LaunchFactory factory =
-            new LaunchFactory(uniFactory, nfpm, router, usdc, address(locker), address(treasury), owner);
-        // owner == deployer for the testnet run; on mainnet the Safe calls setFactory.
-        if (owner == deployer) locker.setFactory(address(factory));
-
+        Out memory o = _deploy(c);
         vm.stopBroadcast();
 
+        _write(c, o, vm.envOr("OUT_FILE", string("deployments/arc-testnet.json")));
+    }
+
+    function _deploy(Cfg memory c) internal returns (Out memory o) {
+        o.uniFactory = deployCode("vendor/uniswap-v3/UniswapV3Factory.json");
+        address descriptor = address(new SimpleDescriptor());
+        o.nfpm = deployCode(
+            "vendor/uniswap-v3/NonfungiblePositionManager.json", abi.encode(o.uniFactory, c.usdc, descriptor)
+        );
+        o.router = deployCode("vendor/uniswap-v3/SwapRouter.json", abi.encode(o.uniFactory, c.usdc));
+        o.quoter = deployCode("vendor/uniswap-v3/QuoterV2.json", abi.encode(o.uniFactory, c.usdc));
+
+        o.treasury = address(new Treasury(c.usdc, o.router, o.uniFactory, c.ecoFund, c.owner));
+        FeeLocker locker = new FeeLocker(o.nfpm, o.router, o.treasury, c.owner);
+        o.locker = address(locker);
+        o.factory = address(
+            new LaunchFactory(o.uniFactory, o.nfpm, o.router, c.usdc, o.locker, o.treasury, c.ecoFund, c.owner)
+        );
+        // owner == deployer for the testnet run; on mainnet the Safe calls setFactory.
+        if (c.owner == c.deployer) locker.setFactory(o.factory);
+    }
+
+    function _write(Cfg memory c, Out memory o, string memory outFile) internal {
         string memory j = "d";
         vm.serializeUint(j, "chainId", block.chainid);
-        vm.serializeAddress(j, "deployer", deployer);
-        vm.serializeAddress(j, "owner", owner);
-        vm.serializeAddress(j, "usdc", usdc);
-        vm.serializeAddress(j, "uniswapV3Factory", uniFactory);
-        vm.serializeAddress(j, "positionManager", nfpm);
-        vm.serializeAddress(j, "swapRouter", router);
-        vm.serializeAddress(j, "quoterV2", quoter);
-        vm.serializeAddress(j, "treasury", address(treasury));
-        vm.serializeAddress(j, "feeLocker", address(locker));
+        vm.serializeAddress(j, "deployer", c.deployer);
+        vm.serializeAddress(j, "owner", c.owner);
+        vm.serializeAddress(j, "ecoFund", c.ecoFund);
+        vm.serializeAddress(j, "usdc", c.usdc);
+        vm.serializeAddress(j, "uniswapV3Factory", o.uniFactory);
+        vm.serializeAddress(j, "positionManager", o.nfpm);
+        vm.serializeAddress(j, "swapRouter", o.router);
+        vm.serializeAddress(j, "quoterV2", o.quoter);
+        vm.serializeAddress(j, "treasury", o.treasury);
+        vm.serializeAddress(j, "feeLocker", o.locker);
         vm.serializeUint(j, "deployBlock", block.number);
-        string memory out = vm.serializeAddress(j, "launchFactory", address(factory));
+        string memory out = vm.serializeAddress(j, "launchFactory", o.factory);
         vm.writeJson(out, outFile);
 
-        console2.log("UniswapV3Factory ", uniFactory);
-        console2.log("PositionManager  ", nfpm);
-        console2.log("SwapRouter       ", router);
-        console2.log("QuoterV2         ", quoter);
-        console2.log("Treasury         ", address(treasury));
-        console2.log("FeeLocker        ", address(locker));
-        console2.log("LaunchFactory    ", address(factory));
+        console2.log("UniswapV3Factory ", o.uniFactory);
+        console2.log("PositionManager  ", o.nfpm);
+        console2.log("SwapRouter       ", o.router);
+        console2.log("QuoterV2         ", o.quoter);
+        console2.log("Treasury         ", o.treasury);
+        console2.log("FeeLocker        ", o.locker);
+        console2.log("LaunchFactory    ", o.factory);
+        console2.log("ecoFund (immutable)", c.ecoFund);
     }
 }

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ArcLaunch · 合约作用与关系图</title>
+<style>
+  :root{
+    --bg:#0b0f17;--card:#121826;--line:#1f2937;--text:#e5e7eb;--muted:#9ca3af;
+    --blue:#3b82f6;--green:#22c55e;--amber:#f59e0b;--red:#ef4444;--purple:#a855f7;--pink:#ec4899;--cyan:#06b6d4;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.65}
+  .wrap{max-width:1120px;margin:0 auto;padding:40px 24px 80px}
+  h1{font-size:30px;margin:0 0 6px}
+  h2{font-size:22px;margin:56px 0 16px;padding-left:12px;border-left:4px solid var(--blue)}
+  h3{font-size:16px;margin:0 0 6px}
+  p{margin:8px 0}
+  .sub{color:var(--muted);font-size:14px}
+  .tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);margin-right:6px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+  .card .role{font-size:13px;color:var(--muted)}
+  .card .meta{font-size:13px;color:var(--muted);margin-top:10px}
+  .meta b{color:var(--text)}
+  .b{border-top:3px solid var(--blue)} .g{border-top:3px solid var(--green)} .a{border-top:3px solid var(--amber)}
+  .r{border-top:3px solid var(--red)} .p{border-top:3px solid var(--purple)} .k{border-top:3px solid var(--pink)} .c{border-top:3px solid var(--cyan)}
+  .ana{margin-top:10px;padding:10px 12px;background:#0f1522;border-left:3px solid var(--amber);border-radius:8px;font-size:14px}
+  .ana::before{content:"生活比喻 ";color:var(--amber);font-weight:600}
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px}
+  th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:13px}
+  code{background:#0f1522;padding:1px 6px;border-radius:5px;font-size:13px;color:#93c5fd}
+  .ok{color:var(--green)} .warn{color:var(--amber)} .no{color:var(--red)}
+  .diagram{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;overflow-x:auto}
+  svg{width:100%;height:auto;display:block;min-width:820px}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--muted);margin-top:10px}
+  .legend span::before{content:"";display:inline-block;width:22px;height:3px;margin-right:6px;vertical-align:middle;border-radius:2px}
+  .l-blue::before{background:var(--blue)} .l-green::before{background:var(--green)} .l-amber::before{background:var(--amber)} .l-red::before{background:var(--red)} .l-purple::before{background:var(--purple)}
+  .callout{background:#0f1a14;border:1px solid #14532d;border-radius:12px;padding:16px 20px;margin-top:16px}
+  .callout.warn{background:#1a1408;border-color:#78350f}
+  .steps{counter-reset:s;display:grid;gap:10px}
+  .step{display:flex;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+  .step::before{counter-increment:s;content:counter(s);flex:0 0 28px;height:28px;border-radius:50%;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.two{grid-template-columns:1fr}}
+  footer{margin-top:60px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>ArcLaunch · 合约作用与关系图</h1>
+<p class="sub">更新 2026-09-06（合约 v2.4：创建费 $1 直接进多签、协议 25% 每 7 天 80/20 结算、税币模式）· 对应测试网部署 <code>contracts/deployments/arc-testnet.json</code> · 面向非技术读者，每个合约都配一个生活比喻</p>
+
+<!-- ====================================================== 一句话 -->
+<div class="callout">
+  <h3>一句话版本</h3>
+  <p><b>Uniswap 是商场的店面和收银机，我们的 4 个合约是商场管理规约：</b>谁能开店、开店流程、地契锁在哪、营业提成怎么分。用户的钱从头到尾都在 Uniswap 池子里，我们的合约只经手"分出来的手续费"这一小股水流。</p>
+</div>
+
+<!-- ====================================================== 关系图 -->
+<h2>1. 关系图：钱和权限怎么流</h2>
+<div class="diagram">
+<svg viewBox="0 0 1000 640" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,PingFang SC,Microsoft YaHei,sans-serif">
+  <defs>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#3b82f6"/></marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#22c55e"/></marker>
+    <marker id="aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#f59e0b"/></marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#ef4444"/></marker>
+    <marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#a855f7"/></marker>
+  </defs>
+
+  <!-- Uniswap zone -->
+  <rect x="520" y="130" width="460" height="230" rx="16" fill="#0f1522" stroke="#1f2937" stroke-dasharray="6 6"/>
+  <text x="540" y="156" fill="#9ca3af" font-size="13">Uniswap V3（我们自部署的"商业楼"）· 用户的钱在这里</text>
+
+  <!-- boxes -->
+  <g id="creator"><rect x="30" y="40" width="150" height="56" rx="12" fill="#121826" stroke="#3b82f6"/><text x="105" y="64" text-anchor="middle" fill="#e5e7eb" font-size="14" font-weight="600">创作者</text><text x="105" y="84" text-anchor="middle" fill="#9ca3af" font-size="12">想发币的人</text></g>
+
+  <g id="factory"><rect x="270" y="30" width="190" height="76" rx="12" fill="#121826" stroke="#3b82f6" stroke-width="2"/><text x="365" y="58" text-anchor="middle" fill="#e5e7eb" font-size="15" font-weight="700">LaunchFactory</text><text x="365" y="78" text-anchor="middle" fill="#9ca3af" font-size="12">招商处：一笔交易开店</text><text x="365" y="95" text-anchor="middle" fill="#9ca3af" font-size="12">铸币 · 建池 · 放币 · 锁地契 · 收创建费</text></g>
+
+  <g id="token"><rect x="560" y="40" width="170" height="56" rx="12" fill="#121826" stroke="#06b6d4"/><text x="645" y="64" text-anchor="middle" fill="#e5e7eb" font-size="14" font-weight="600">LaunchToken</text><text x="645" y="84" text-anchor="middle" fill="#9ca3af" font-size="12">统一模板的商品 · 10 亿固定</text></g>
+
+  <g id="pool"><rect x="560" y="180" width="200" height="66" rx="12" fill="#121826" stroke="#a855f7" stroke-width="2"/><text x="660" y="206" text-anchor="middle" fill="#e5e7eb" font-size="14" font-weight="700">Token / USDC 池</text><text x="660" y="226" text-anchor="middle" fill="#9ca3af" font-size="12">自动售货机 · 池费 1%</text></g>
+
+  <g id="router"><rect x="800" y="180" width="160" height="66" rx="12" fill="#121826" stroke="#a855f7"/><text x="880" y="203" text-anchor="middle" fill="#e5e7eb" font-size="13" font-weight="600">SwapRouter / QuoterV2</text><text x="880" y="223" text-anchor="middle" fill="#9ca3af" font-size="12">收银台 / 价签</text></g>
+
+  <g id="npm"><rect x="560" y="280" width="200" height="60" rx="12" fill="#121826" stroke="#a855f7"/><text x="660" y="304" text-anchor="middle" fill="#e5e7eb" font-size="13" font-weight="600">PositionManager → LP NFT</text><text x="660" y="324" text-anchor="middle" fill="#9ca3af" font-size="12">地契登记处，发一张地契</text></g>
+
+  <g id="user"><rect x="820" y="40" width="140" height="56" rx="12" fill="#121826" stroke="#3b82f6"/><text x="890" y="64" text-anchor="middle" fill="#e5e7eb" font-size="14" font-weight="600">用户 / 交易者</text><text x="890" y="84" text-anchor="middle" fill="#9ca3af" font-size="12">买卖代币</text></g>
+
+  <g id="locker"><rect x="270" y="280" width="190" height="76" rx="12" fill="#121826" stroke="#22c55e" stroke-width="2"/><text x="365" y="306" text-anchor="middle" fill="#e5e7eb" font-size="15" font-weight="700">FeeLocker</text><text x="365" y="326" text-anchor="middle" fill="#9ca3af" font-size="12">地契保险箱 + 分账柜台</text><text x="365" y="344" text-anchor="middle" fill="#9ca3af" font-size="12">只进不出 · 75 / 25 分手续费</text></g>
+
+  <g id="payout"><rect x="30" y="290" width="150" height="56" rx="12" fill="#121826" stroke="#22c55e"/><text x="105" y="314" text-anchor="middle" fill="#e5e7eb" font-size="14" font-weight="600">创作者收款地址</text><text x="105" y="334" text-anchor="middle" fill="#9ca3af" font-size="12">自动到账 · 失败可 claim</text></g>
+
+  <g id="treasury"><rect x="270" y="470" width="190" height="76" rx="12" fill="#121826" stroke="#f59e0b" stroke-width="2"/><text x="365" y="496" text-anchor="middle" fill="#e5e7eb" font-size="15" font-weight="700">Treasury（自动结算）</text><text x="365" y="516" text-anchor="middle" fill="#9ca3af" font-size="12">每 7 天清零，不囤钱</text><text x="365" y="534" text-anchor="middle" fill="#9ca3af" font-size="12">80 / 20 写死</text></g>
+
+  <g id="burn"><rect x="560" y="480" width="170" height="56" rx="12" fill="#121826" stroke="#ef4444"/><text x="645" y="504" text-anchor="middle" fill="#e5e7eb" font-size="14" font-weight="600">买 $ARCL → 0x…dEaD</text><text x="645" y="524" text-anchor="middle" fill="#9ca3af" font-size="12">回购销毁，进了就出不来</text></g>
+
+  <g id="eco"><rect x="790" y="480" width="170" height="56" rx="12" fill="#121826" stroke="#f59e0b" stroke-width="2"/><text x="875" y="504" text-anchor="middle" fill="#e5e7eb" font-size="14" font-weight="600">生态多签（Safe）</text><text x="875" y="524" text-anchor="middle" fill="#9ca3af" font-size="12">唯一资金终点 · 激励 · 运营 · 审计</text></g>
+
+  <g id="keeper"><rect x="30" y="480" width="150" height="56" rx="12" fill="#121826" stroke="#9ca3af" stroke-dasharray="4 4"/><text x="105" y="504" text-anchor="middle" fill="#e5e7eb" font-size="14" font-weight="600">Keeper（链下）</text><text x="105" y="524" text-anchor="middle" fill="#9ca3af" font-size="12">勤杂工：定时按按钮</text></g>
+
+  <!-- arrows: launch (blue) -->
+  <path d="M180 68 H268" stroke="#3b82f6" stroke-width="2" fill="none" marker-end="url(#ab)"/>
+  <text x="224" y="60" text-anchor="middle" fill="#93c5fd" font-size="11">发币 + 创建费</text>
+
+  <path d="M460 62 H558" stroke="#3b82f6" stroke-width="2" fill="none" marker-end="url(#ab)"/>
+  <text x="509" y="54" text-anchor="middle" fill="#93c5fd" font-size="11">① 部署铸币</text>
+
+  <path d="M460 90 C520 90 520 213 558 213" stroke="#3b82f6" stroke-width="2" fill="none" marker-end="url(#ab)"/>
+  <text x="500" y="150" text-anchor="middle" fill="#93c5fd" font-size="11">② 建池</text>
+  <text x="500" y="165" text-anchor="middle" fill="#93c5fd" font-size="11">单边放入全部代币</text>
+
+  <path d="M660 246 V278" stroke="#a855f7" stroke-width="2" fill="none" marker-end="url(#ap)"/>
+  <text x="700" y="266" fill="#c4b5fd" font-size="11">③ 生成地契</text>
+
+  <path d="M558 310 H462" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#ag)"/>
+  <text x="510" y="302" text-anchor="middle" fill="#86efac" font-size="11">④ 地契锁进保险箱</text>
+  <text x="510" y="330" text-anchor="middle" fill="#86efac" font-size="11">无解锁函数</text>
+
+  <path d="M440 106 C440 420 875 380 875 478" stroke="#f59e0b" stroke-width="2" fill="none" marker-end="url(#aa)"/>
+  <text x="790" y="440" text-anchor="middle" fill="#fcd34d" font-size="11">⑤ 创建费 $1 直接进多签</text>
+
+  <!-- trading (purple) -->
+  <path d="M880 96 V178" stroke="#a855f7" stroke-width="2" fill="none" marker-end="url(#ap)" marker-start="url(#ap)"/>
+  <text x="920" y="140" fill="#c4b5fd" font-size="11">买 / 卖</text>
+  <path d="M798 213 H762" stroke="#a855f7" stroke-width="2" fill="none" marker-end="url(#ap)" marker-start="url(#ap)"/>
+
+  <!-- fees (green) -->
+  <path d="M660 340 C660 380 460 380 460 335" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#ag)"/>
+  <text x="590" y="392" text-anchor="middle" fill="#86efac" font-size="11">⑥ 攒下的 1% 手续费 collect()</text>
+
+  <path d="M268 318 H182" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#ag)"/>
+  <text x="225" y="310" text-anchor="middle" fill="#86efac" font-size="11">75%</text>
+
+  <path d="M365 356 V468" stroke="#f59e0b" stroke-width="2" fill="none" marker-end="url(#aa)"/>
+  <text x="395" y="415" fill="#fcd34d" font-size="11">25%</text>
+
+  <!-- treasury outputs -->
+  <path d="M460 508 H558" stroke="#ef4444" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+  <text x="509" y="500" text-anchor="middle" fill="#fca5a5" font-size="11">20%</text>
+  <path d="M460 530 C560 570 700 570 788 520" stroke="#f59e0b" stroke-width="2" fill="none" marker-end="url(#aa)"/>
+  <text x="640" y="580" text-anchor="middle" fill="#fcd34d" font-size="11">80%（每 7 天结算一次）</text>
+
+  <!-- keeper triggers -->
+  <path d="M180 508 H268" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="4 4" fill="none" marker-end="url(#aa)"/>
+  <text x="224" y="500" text-anchor="middle" fill="#9ca3af" font-size="11">execute()</text>
+  <path d="M105 480 C105 400 200 360 268 345" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="4 4" fill="none" marker-end="url(#ag)"/>
+  <text x="130" y="410" fill="#9ca3af" font-size="11">distribute()</text>
+
+  <text x="30" y="620" fill="#6b7280" font-size="12">任何人都能调用 distribute() / execute()，Keeper 只是保证及时。平台不设资金池：所有钱的终点只有多签和 0x…dEaD（单向，进了就永远出不来）。</text>
+</svg>
+<div class="legend">
+  <span class="l-blue">发币流程（一笔交易内完成 ①–⑤）</span>
+  <span class="l-purple">用户交易（只和 Uniswap 打交道）</span>
+  <span class="l-green">手续费 → 创作者</span>
+  <span class="l-amber">协议 25% → 7 天结算 → 多签 80%；创建费 → 多签</span>
+  <span class="l-red">回购销毁</span>
+</div>
+</div>
+
+<!-- ====================================================== 合约卡片 -->
+<h2>2. 每个合约是干什么的</h2>
+<div class="grid">
+
+  <div class="card b">
+    <span class="tag">我们写的</span><span class="tag">不可升级</span>
+    <h3>LaunchFactory</h3>
+    <p class="role">发币入口。用户点"发射"就是调它的 <code>launch()</code>，一笔交易里做完：部署代币 → 创建 Token/USDC 池 → 按<b>平台统一开盘市值</b>（<code>startMcapUsdc</code>，初值 $5,000，创作者没有价格输入）把 10 亿代币单边放进池子 → 把 LP 地契交给 FeeLocker → 收创建费（$1，直接转生态多签）→ 可选帮创作者做第一笔买入（抢在机器人前）。</p>
+    <div class="ana">商场招商处。你填好店名和招牌，交一点开店手续费，它一次性帮你把店装好、货上齐、地契送去保险箱。所有店统一开盘价，店主自己定不了。开完店它就不再管你的店了。</div>
+    <div class="meta">管理员能改：<b>创建费开关 / 白名单 / 创建费收款地址、毕业阈值、保护窗口、开盘市值、税率上限</b>——只影响之后新开的店。改不了：分成比例、供应量、已发的币（含其税率）。</div>
+  </div>
+
+  <div class="card c">
+    <span class="tag">我们写的</span><span class="tag">每个币一份，同一模板</span>
+    <h3>LaunchToken</h3>
+    <p class="role">代币本体。固定 10 亿枚，构造时全部铸给 Factory，之后没有 <code>mint</code>、没有黑名单、没有税率开关。名称、logo、简介、社交链接全部写在链上。唯一的特殊逻辑：开盘保护窗口（约 20 个区块 ≈ 10 秒）内，从池子买出去的每笔 ≤ 5.5%、每钱包持有 ≤ 5%；发射区块只允许创作者自己买。卖出和转账永远不限。</p>
+    <div class="ana">商场统一装修的店面。所有店同一套图纸、同一把锁，店主只能换招牌，改不了结构，也没有暗门。开业头 10 秒每人限购，防止黄牛一次扫光。</div>
+    <div class="meta">创作者能改：<b>什么都改不了</b>。管理员能改：<b>什么都改不了</b>。</div>
+  </div>
+
+  <div class="card g">
+    <span class="tag">我们写的</span><span class="tag">不可升级</span>
+    <h3>FeeLocker</h3>
+    <p class="role">拿着<b>所有</b>代币的 LP 地契（Uniswap 仓位 NFT），合约里没有任何把 NFT 转出去的函数（测试 <code>locker_positionCanNeverLeave</code> 专门验这个）。任何人可调 <code>distribute(token, minUsdcOut)</code>：从池子 collect 攒下的手续费 → <b>代币侧手续费在同一池内卖成 USDC</b> → 合计 75% 打给创作者收款地址、25% 打给 Treasury。<b>创作者只收 USDC，不会收到一堆自己发的币。</b>换汇失败就先存着下次再试，USDC 部分照发；打款失败（比如创作者被 USDC 黑名单）不会卡住，记进待领余额，解封后 <code>claim()</code>。</p>
+    <div class="ana">地契保险箱 + 分账柜台。地契放进去就焊死了，谁也拿不出来，所以店永远关不了。柜台每隔一阵把营业提成数一遍，先把收到的实物折成现金，再 75% 给店主、25% 给商场。店主不在，钱先存柜台，回来随时领。</div>
+    <div class="meta">创作者能改：<b>自己的收款地址（即时）</b>。管理员：<b>只能"提议"改某个币的收款地址，48 小时后才能生效，期间创作者可一键否决</b>（社区接管用）；协议分成收款地址 immutable，管理员也改不了。<span class="ok">管理员偷创作者分成在技术上已做不到。</span></div>
+  </div>
+
+  <div class="card a">
+    <span class="tag">我们写的</span><span class="tag">80/20 · 7 天写死</span>
+    <h3>Treasury（自动结算合约，不是国库）</h3>
+    <p class="role">只收协议那 25% 手续费（创建费不经它，直接进多签），最多攒 7 天。到点后任何人可调 <code>execute()</code>：80% 的 USDC 转生态多签，20% 从池子买 $ARCL 转进 <code>0x…dEaD</code>（Arc 禁止转零地址）销毁，然后余额归零。合约没有取款函数，管理员拿不走里面的钱。平台币未配置时 20% 先攒成备用金，配置后首个周期一并买掉。收到的代币侧手续费可由管理员 <code>convert()</code> 换成 USDC。</p>
+    <div class="ana">商场门口的自动分账机：每周清一次箱，八成打到董事会的联名账户，两成上市场买回商场自己的股票撕掉。机器里从来不留钱，比例和周期刻在机器上，董事会也改不了。</div>
+    <div class="meta">管理员能改：<b>平台币地址、生态多签地址、把持有的代币换成 USDC</b>。改不了：<b>80/20、7 天周期</b>，也取不出钱。</div>
+  </div>
+
+  <div class="card p">
+    <span class="tag">Uniswap 官方字节码</span><span class="tag">我们自部署</span>
+    <h3>Uniswap V3（4 个合约）</h3>
+    <p class="role"><code>UniswapV3Factory</code> 盖楼、建池；<code>NonfungiblePositionManager</code> 登记地契、collect 手续费；<code>SwapRouter</code> 用户买卖的入口；<code>QuoterV2</code> 报价。V3 许可证 2023 年到期，任何人可以照原图纸部署。Arc 测试网没有官方 Uniswap，所以我们自己盖了一栋。</p>
+    <div class="ana">整栋商业楼 + 收银系统 + 房管局。图纸是 Uniswap 公开的，我们照图纸盖了自己的一栋。用户的钱全在这栋楼的池子里，我们的合约进不去。</div>
+    <div class="meta">谁能改：<b>没人</b>。Uniswap V3 本身没有管理员。</div>
+  </div>
+
+  <div class="card k">
+    <span class="tag">链下</span><span class="tag">不碰资金</span>
+    <h3>Keeper · 索引器 · 前端</h3>
+    <p class="role"><b>Keeper</b>：每分钟检查，条件满足就替大家按 <code>distribute()</code> / <code>execute()</code>，没有它别人也能按。<b>索引器</b>：把链上事件整理成 K 线、持有人、成交流水、到账记录，提供 API 和 WebSocket。<b>前端</b>：网页和手机页面，只是柜台，签名都在用户钱包里完成。</p>
+    <div class="ana">勤杂工 + 账房 + 门面。勤杂工负责准点按按钮；账房只抄账不管钱；门面只是让你看得清楚、点得方便。三个都挂了，合约照样运转，钱一分不少。</div>
+    <div class="meta">私钥：<b>Keeper 钱包只付 gas</b>，没有任何合约权限。</div>
+  </div>
+</div>
+
+<!-- ====================================================== 一笔发币的生命周期 -->
+<h2>3. 一个币从出生到永远：走一遍</h2>
+<div class="steps">
+  <div class="step"><div><b>创作者填表、点发射</b>（付 $1 创建费，可选首购金额；可选税币模式）。<br><span class="sub">一笔交易，LaunchFactory 完成 ①–⑤：铸 10 亿、建池、单边放币、地契进 FeeLocker、创建费直接进生态多签。gas 约 0.17 USDC。</span></div></div>
+  <div class="step"><div><b>开盘前 10 秒：保护窗口</b>。<br><span class="sub">发射区块只有创作者能买；接下来 20 个区块每人限购 5.5%、持仓 ≤ 5%。之后全面开放。</span></div></div>
+  <div class="step"><div><b>用户在 Uniswap 池里买卖</b>，每笔 1% 手续费自动攒进 LP 地契。<br><span class="sub">价格由池子里 USDC / 代币比例决定，从起始价往上就是 x·y=k，和 pons v2 的曲线是同一条公式。</span></div></div>
+  <div class="step"><div><b>Keeper 定期按 distribute()</b>：手续费 75% 自动到创作者钱包、25% 进结算合约（税币的税则分给营销 / 团队两个地址）。<br><span class="sub">每笔到账在创作者中心带 ArcScan 链接。打款失败进待领，随时 claim。</span></div></div>
+  <div class="step"><div><b>池内 USDC ≥ 10,000 → 毕业</b>。<br><span class="sub">只是挂标志 + 进榜单 + 触发平台币激励。池子、费率、分成、地契一切不变，交易继续。</span></div></div>
+  <div class="step"><div><b>每 7 天 Keeper 按 execute()</b>：80% 转生态多签，20% 划入回购金；随后每 10 分钟 <code>buyback()</code> 一批买 $ARCL 打进 0x…dEaD，直到回购金归零。<br><span class="sub">每批最多推价 1.5%、成交不低于池子 10 分钟均价的 90%（合约层防三明治）；每笔在 /burn 看板带交易哈希。</span></div></div>
+  <div class="step"><div><b>永远</b>。<br><span class="sub">地契拿不出来，池子关不了，手续费一直分。创作者跑路了，管理员可改收款地址交给社区（CTO）。</span></div></div>
+</div>
+
+<!-- ====================================================== 信任 -->
+<h2>4. 玩家怎么知道没有后门</h2>
+<table>
+  <tr><th style="width:26%">检查项</th><th>怎么自己验证</th></tr>
+  <tr><td>源码 = 链上字节码</td><td>arcscan 合约页显示"已验证"，任何人可比对。Uniswap 4 个合约用官方原版字节码，可逐字节和 Uniswap 官方发布比对。</td></tr>
+  <tr><td>不可升级</td><td>没有代理合约、没有 upgrade 函数。部署那天什么样，永远什么样。</td></tr>
+  <tr><td>地契没有出口</td><td>FeeLocker 源码里搜 <code>safeTransferFrom</code> / <code>transferFrom</code>——没有任何把 NFT 转走的调用。</td></tr>
+  <tr><td>代币没有增发 / 黑名单 / 税开关</td><td>LaunchToken 源码 100 行，只有 <code>_update</code> 里一段窗口限购，其它全是 OpenZeppelin 标准 ERC20。</td></tr>
+  <tr><td>经济参数写死</td><td>75/25 在发币时快照进 Lock；80/20、7 天周期和 10 亿是 <code>constant</code>；税币的税率、两个地址和比例是 <code>immutable</code>。</td></tr>
+  <tr><td>管理员权限清单</td><td>见下表，一共 7 个函数，全部公开。<b>所有收款地址（生态多签 / 创建费收款 / 协议分成收款）部署时写死，管理员改不了。</b></td></tr>
+</table>
+
+<h3 style="margin-top:24px">管理员（上线前转 Safe 多签）能做的全部事情</h3>
+<table>
+  <tr><th>函数</th><th>作用</th><th>影响谁的钱</th></tr>
+  <tr><td><code>Factory.setCreationFee</code></td><td>调创建费 / 开关</td><td class="ok">新发币的创作者，事先可见</td></tr>
+  <tr><td><code>Factory.setFeeWaived</code></td><td>创建费白名单</td><td class="ok">无</td></tr>
+  <tr><td><code>Factory.setLaunchParams</code></td><td>毕业阈值 / 保护窗口 / 限购比例 / 开盘市值（500 – 10,000,000 USDC）</td><td class="ok">只影响之后新发的币</td></tr>
+  <tr><td><code>Locker.setFactory</code></td><td>部署时一次性接线，之后锁死</td><td class="ok">无</td></tr>
+  <tr><td><code>Locker.proposePayout</code> / <code>cancelPayoutProposal</code></td><td>社区接管：提议改某个币的创作者收款地址，48 小时后任何人可 <code>executePayout</code></td><td class="ok">创作者的 75%，但有 48h 延迟且创作者可否决；<code>setPayout</code> 即时路径只有创作者自己能用</td></tr>
+  <tr><td><code>Treasury.configure</code></td><td>设平台币地址，<b>只能调一次</b>（再调 revert）</td><td class="ok">无，只决定 20% 买哪个币烧</td></tr>
+  <tr><td><code>Treasury.convert</code></td><td>把结算合约收到的代币换成 USDC，USDC 留在合约内</td><td class="ok">只动我们自己那份，钱不出合约</td></tr>
+</table>
+<p class="sub" style="margin-top:10px">管理员<b>做不到</b>的：动池子里的钱、动任何 LP、改分成比例、<b>改任何收款地址</b>（<code>Treasury.ecoFund</code> / <code>Factory.feeRecipient</code> / <code>Locker.treasury</code> 均为 immutable，部署时由 <code>ECO_FUND</code> 写入）、换平台币、增发、冻结账户、暂停交易、升级合约、即时改创作者收款地址。</p>
+
+<!-- ====================================================== 对标 pons v2 -->
+<h2>5. 我们 v1 路线 vs pons v2：效果对照与改法</h2>
+<p class="sub">pons v2 = 自研曲线合约卖币 → 达标后迁进 Uniswap V4 → Hook 收费。我们 = 第一秒就在 Uniswap V3 池里，不搬家。下表列出 pons v2 每一个"效果"，我们是否已有、没有的话怎么补。</p>
+<table>
+  <tr><th style="width:22%">pons v2 的效果</th><th style="width:14%">我们现在</th><th>不换路线怎么补（保持 V3）</th><th style="width:12%">改动量</th></tr>
+  <tr><td>统一开盘价（公平发射）</td><td class="ok">已有（9.3）</td><td>Factory 内按 <code>startMcapUsdc</code> 算价，创作者无价格输入。admin 可调，仅影响新币。</td><td>已完成</td></tr>
+  <tr><td>价格按公式走</td><td class="ok">已有</td><td>V3 单边仓位从起始价铺到最高价 = x·y=k，与曲线同一数学。</td><td>—</td></tr>
+  <tr><td>零预留、创作者零成本、LP 锁死</td><td class="ok">已有</td><td>—</td><td>—</td></tr>
+  <tr><td>创作者只收报价币（USDC），不收一堆自己的币</td><td class="ok">已有（9.3）</td><td>FeeLocker.distribute 把代币侧手续费在同一池内卖成 USDC 再分；keeper 传 97% 滑点保护；失败暂存重试。</td><td>已完成</td></tr>
+  <tr><td>前 5 秒递减狙击税（99% → 0）</td><td class="warn">硬限购 5% / 5.5%</td><td>LaunchToken._update 里把"超额 revert"改成"按区块递减抽税，税走多签或销毁"。税只能收代币不能收 USDC（transfer 钩子拿不到 USDC）。<b>硬限购和税各有优劣，不一定要换。</b></td><td>中，约 60 行</td></tr>
+  <tr><td>创作者税（交易额外抽一层给创作者）</td><td class="no">没有</td><td>可在 transfer 里加，但带税代币会让聚合器 / 路由报错，pump.fun 也没做。<b>建议不做</b>，用 75% 分成替代。</td><td>不建议</td></tr>
+  <tr><td>毕业是一个"上市时刻"</td><td class="warn">只是标志</td><td>毕业事件已有；补运营层：毕业奖励创作者 $ARCL、持有人快照空投、首页置顶、推送。<b>不需要改核心合约</b>，生态基金出钱。</td><td>小，主要链下</td></tr>
+  <tr><td>支持多种报价资产（ETH/USDG/股票代币）</td><td class="no">只 USDC</td><td>Arc 上 USDC 就是唯一通用货币，<b>不需要</b>。</td><td>不需要</td></tr>
+  <tr><td>曲线阶段没人能加流动性</td><td class="no">池子任何人可加</td><td>做不到，但影响极小：外人加流动性得同时拿代币和 USDC，等于真金白银托底，不是攻击。</td><td>不做</td></tr>
+  <tr><td>Hook 实时分费，不需要 Keeper</td><td class="no">Keeper 定期分</td><td>等 9.16 官方 V4 上线后，新开一个走 V4 + 自研 Hook 的 Factory，老币留 V3。<b>这是唯一必须等 V4 的项。</b></td><td>大，二期</td></tr>
+</table>
+
+<div class="two" style="margin-top:20px">
+  <div class="callout">
+    <h3>结论一：达到 pons v2 的效果，不需要曲线</h3>
+    <p>曲线是 pump.fun 时代的产物：Solana 上建池要垫真钱，只能先用曲线攒钱再建池。Uniswap V3 单边放币零成本，直接建池就没这个障碍了——pons v1 正是看到这点才直接用 V3 的。</p>
+    <p>上表里 pons v2 的 10 个效果，<b>8 个不换路线就能补</b>（统一开盘价、只收 USDC 已于 9.3 完成），1 个不需要，1 个（Hook 实时分费）必须等 V4 但也不需要曲线。曲线真正独有的只有"毕业时一次性注入流动性的仪式感"和"曲线阶段无人能加流动性"，前者用运营替代，后者影响可忽略。</p>
+  </div>
+  <div class="callout warn">
+    <h3>结论二：如果坚持照抄 pons v2 完整路线要付什么代价</h3>
+    <p>新写 6 个合约：BondingCurve、GraduationGuard、GraduationExecutor、V4 Hook、V4 Locker、FeeEscrow，外加 LaunchAndBuy 路由；现有 Factory / Locker / Token 基本重写；测试用例重做。</p>
+    <p>估算 4–6 周开发 + 审计，且<b>Arc 主网前无法测试</b>（测试网没有 V4）。换来的只有上面说的两项曲线独有效果，以及多出一个"搬家"环节的风险面。<b>不建议作为 9.16 上线版本。</b></p>
+  </div>
+</div>
+
+<h3 style="margin-top:28px">建议的路线</h3>
+<div class="steps">
+  <div class="step"><div><b>9.16 上线版（现在 → 主网）</b>：V3 路线不动。固定开盘市值、代币侧手续费换 USDC、社区接管时间锁已于 9.3 完成（见 <code>11-合约v2变更说明.md</code>），剩毕业奖励运营方案。<span class="sub">对外可以完整地说"公平发射：统一开盘价、公式定价、零预留、LP 锁死、创作者只收美元"。</span></div></div>
+  <div class="step"><div><b>二期（V4 官方地址公布后）</b>：新 Factory 走 V4 + 自研 Hook，实现每笔交易实时分费、Hook 内狙击税收 USDC。老币留 V3，两套并行。<span class="sub">依然不做曲线。</span></div></div>
+  <div class="step"><div><b>始终不做</b>：曲线 + 迁移。<span class="sub">除非老板明确要"毕业迁移"这个叙事作为产品卖点。</span></div></div>
+</div>
+
+<footer>
+  合约源码 <code>contracts/src/</code> · 测试报告 <code>docs/06</code> · 静态分析 <code>docs/08</code> · 测试网站点 arclaunch.top · 本文档中的改动量为估算
+</footer>
+</div>
+</body>
+</html>

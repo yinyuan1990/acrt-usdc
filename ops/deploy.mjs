@@ -80,7 +80,7 @@ docker ps --filter name=arclaunch --format '{{.Names}}  {{.Status}}'`);
       await exec(`set -e
 cp /opt/arclaunch/nginx/arclaunch.conf /etc/nginx/conf.d/arclaunch.conf
 nginx -t 2>&1 | tail -n 1 && systemctl reload nginx
-echo "public api: $(curl -s https://launch.hzmrbq.com/api/health)"`);
+echo "public api: $(curl -s https://arclaunch.top/api/health)"`);
     }
     console.log("DEPLOY_OK");
   } catch (e) {
@@ -90,4 +90,5 @@ echo "public api: $(curl -s https://launch.hzmrbq.com/api/health)"`);
     conn.end();
   }
 }).on("error", (e) => { console.error("ssh error:", e.message); process.exit(1); });
-conn.connect({ host, username, privateKey, readyTimeout: 30000 });
+// keepalive: `docker compose build` can stay silent for minutes and idle connections were getting dropped mid-deploy
+conn.connect({ host, username, privateKey, readyTimeout: 30000, keepaliveInterval: 10000, keepaliveCountMax: 6 });

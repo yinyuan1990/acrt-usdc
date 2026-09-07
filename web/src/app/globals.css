@@ -46,20 +46,28 @@
   --sidebar-border: rgba(255, 255, 255, 0.08);
   --sidebar-ring: #3b8be0;
 
-  /* domain tokens */
-  --up: #22c55e;
-  --down: #ef4444;
+  /* domain tokens — up/down follow the TradingView candlestick defaults so buy/sell UI matches the chart */
+  --up: #26a69a;
+  --down: #ef5350;
   --gold: #f5b544;
+  --burn: #a855f7; /* buyback & burn — violet, same family as the logo gradient */
+  /* revenue split bar: 80% eco (cyan) / 20% buyback (blue) */
+  --split-eco: #22d3ee;
+  --split-buyback: #4da3ff;
 
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei",
+  /* Latin from Inter, CJK from the self-hosted Noto Sans SC so every OS renders the same glyphs. */
+  --font-sans: "Inter Variable", "Noto Sans SC Variable", Inter, ui-sans-serif,
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei",
     sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
-    "Liberation Mono", monospace;
+  --font-mono: "JetBrains Mono Variable", "Noto Sans SC Variable",
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", "PingFang SC", "Microsoft YaHei UI", monospace;
   --font-body: var(--font-sans);
 
-  --glow: 0 0 0 1px rgba(77, 158, 255, 0.35),
-    0 8px 28px -8px rgba(39, 117, 202, 0.55);
+  /* soft diffuse glow, no hard 1px ring */
+  --glow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 10px 26px -8px rgba(59, 139, 224, 0.7);
   --bg-decor: radial-gradient(
       900px 500px at 15% -10%,
       rgba(39, 117, 202, 0.22),
@@ -78,45 +86,52 @@
 [data-theme="terminal"] {
   --radius: 2px;
 
-  --background: #050505;
-  --foreground: #e8ffe8;
-  --card: #0d0d0d;
-  --card-foreground: #e8ffe8;
-  --popover: #111111;
-  --popover-foreground: #e8ffe8;
-  --primary: #c8ff00;
-  --primary-foreground: #000000;
-  --secondary: #131313;
-  --secondary-foreground: #b8d8b8;
-  --muted: #131313;
-  --muted-foreground: #6f7f6f;
-  --accent: #1a1a1a;
-  --accent-foreground: #e8ffe8;
-  --destructive: #ff2d95;
-  --border: #1f1f1f;
-  --input: #2e2e2e;
-  --ring: #c8ff00;
-  --chart-1: #c8ff00;
-  --chart-2: #00e5ff;
-  --chart-3: #ffd166;
-  --chart-4: #ff2d95;
-  --chart-5: #ffffff;
-  --sidebar: #080808;
-  --sidebar-foreground: #e8ffe8;
-  --sidebar-primary: #c8ff00;
-  --sidebar-primary-foreground: #000000;
-  --sidebar-accent: #131313;
-  --sidebar-accent-foreground: #e8ffe8;
-  --sidebar-border: #1f1f1f;
-  --sidebar-ring: #c8ff00;
+  /* Softened palette (9.6): mint green instead of acid lime, neutral off-white text, half the glow. */
+  --background: #070908;
+  --foreground: #dde3dd;
+  --card: #0e110f;
+  --card-foreground: #dde3dd;
+  --popover: #121514;
+  --popover-foreground: #dde3dd;
+  --primary: #7ee787;
+  --primary-foreground: #06140a;
+  --secondary: #141816;
+  --secondary-foreground: #a9b8ab;
+  --muted: #141816;
+  --muted-foreground: #7c887e;
+  --accent: #1a1f1c;
+  --accent-foreground: #dde3dd;
+  --destructive: #f472b6;
+  --border: #222826;
+  --input: #2c332f;
+  --ring: #7ee787;
+  --chart-1: #7ee787;
+  --chart-2: #38bdf8;
+  --chart-3: #f2cc60;
+  --chart-4: #f472b6;
+  --chart-5: #e6ebe6;
+  --sidebar: #0a0d0b;
+  --sidebar-foreground: #dde3dd;
+  --sidebar-primary: #7ee787;
+  --sidebar-primary-foreground: #06140a;
+  --sidebar-accent: #141816;
+  --sidebar-accent-foreground: #dde3dd;
+  --sidebar-border: #222826;
+  --sidebar-ring: #7ee787;
 
-  --up: #c8ff00;
-  --down: #ff2d95;
-  --gold: #ffd166;
+  /* same standard candle colours in the terminal theme; the green stays an accent, not a direction colour */
+  --up: #26a69a;
+  --down: #ef5350;
+  --gold: #f2cc60;
+  --burn: #c084fc;
+  /* revenue split bar */
+  --split-eco: #7ee787;
+  --split-buyback: #38bdf8;
 
   --font-body: var(--font-mono);
 
-  --glow: 0 0 14px rgba(200, 255, 0, 0.35);
+  --glow: inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 0 12px rgba(126, 231, 135, 0.18);
   --bg-decor: none;
   --scanlines: repeating-linear-gradient(
     0deg,
@@ -164,6 +179,7 @@
   --color-up: var(--up);
   --color-down: var(--down);
   --color-gold: var(--gold);
+  --color-burn: var(--burn);
 
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);

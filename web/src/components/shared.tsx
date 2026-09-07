@@ -5,7 +5,7 @@ import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { shortAddr, timeAgo } from "@/lib/format";
-import { clockStore } from "@/lib/store";
+import { clockStore, secondClockStore } from "@/lib/store";
 import { useApp } from "@/components/providers";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -20,15 +20,17 @@ export function Stat({
   label: string;
   value: React.ReactNode;
   sub?: React.ReactNode;
-  tone?: "up" | "down" | "primary" | "gold";
+  tone?: "up" | "down" | "primary" | "gold" | "burn";
   className?: string;
 }) {
-  const toneCls = tone ? { up: "text-up", down: "text-down", primary: "text-primary", gold: "text-gold" }[tone] : "text-foreground";
+  const toneCls = tone ? { up: "text-up", down: "text-down", primary: "text-primary", gold: "text-gold", burn: "text-burn" }[tone] : "text-foreground";
+  const accent = tone ? { up: "bg-up", down: "bg-down", primary: "bg-primary", gold: "bg-gold", burn: "bg-burn" }[tone] : "bg-foreground/15";
   return (
-    <Card size="sm" className={className}>
+    <Card size="sm" className={cn("relative", className)}>
+      <span className={cn("absolute top-3 bottom-3 left-0 w-0.5 rounded-r-full", accent)} />
       <CardContent>
         <div className="label">{label}</div>
-        <div className={cn("mt-1 font-mono text-xl font-semibold tabular md:text-2xl", toneCls)}>{value}</div>
+        <div className={cn("mt-1 font-mono text-xl font-semibold tracking-tight tabular md:text-2xl", toneCls)}>{value}</div>
         {sub && <div className="mt-1 text-xs text-muted-foreground">{sub}</div>}
       </CardContent>
     </Card>
@@ -83,6 +85,35 @@ export function TimeAgo({ ts, className }: { ts: number | string; className?: st
   return (
     <span className={cn("tabular", className)} suppressHydrationWarning>
       {now === null ? "…" : timeAgo(ms, now)}
+    </span>
+  );
+}
+
+/** Time until a unix-seconds deadline: "6d 22h" beyond a day, "12h05m" under it; ticks with the shared clock. */
+export function Countdown({ eta, className }: { eta: number; className?: string }) {
+  const clock = useSyncExternalStore(clockStore.subscribe, clockStore.get, clockStore.getServer);
+  if (clock === null) return <span className={cn("font-mono", className)}>…</span>;
+  const s = Math.max(0, Math.floor(eta - clock / 1000));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const text = d > 0 ? `${d}d ${h}h` : `${h}h${String(m).padStart(2, "0")}m`;
+  return <span className={cn("font-mono tabular", className)}>{text}</span>;
+}
+
+/** Live countdown ticking every second: "6d 22:17:05" beyond a day, "22:17:05" under it. */
+export function LiveCountdown({ eta, className }: { eta: number; className?: string }) {
+  const now = useSyncExternalStore(secondClockStore.subscribe, secondClockStore.get, secondClockStore.getServer);
+  if (now === null) return <span className={cn("font-mono", className)}>…</span>;
+  const s = Math.max(0, Math.floor(eta - now / 1000));
+  const d = Math.floor(s / 86400);
+  const hh = String(Math.floor((s % 86400) / 3600)).padStart(2, "0");
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return (
+    <span className={cn("font-mono tabular", className)}>
+      {d > 0 && <>{d}d </>}
+      {hh}:{mm}:{ss}
     </span>
   );
 }

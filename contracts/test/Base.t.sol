@@ -39,10 +39,10 @@ abstract contract Base is Test {
         router = ISwapRouter(deployCode("vendor/uniswap-v3/SwapRouter.json", abi.encode(address(uni), address(usdc))));
         quoter = deployCode("vendor/uniswap-v3/QuoterV2.json", abi.encode(address(uni), address(usdc)));
 
-        treasury = new Treasury(address(usdc), address(router), owner);
-        locker = new FeeLocker(address(nfpm), address(treasury), owner);
+        treasury = new Treasury(address(usdc), address(router), address(uni), eco, owner);
+        locker = new FeeLocker(address(nfpm), address(router), address(treasury), owner);
         factory = new LaunchFactory(
-            address(uni), address(nfpm), address(router), address(usdc), address(locker), address(treasury), owner
+            address(uni), address(nfpm), address(router), address(usdc), address(locker), address(treasury), eco, owner
         );
         vm.prank(owner);
         locker.setFactory(address(factory));
@@ -59,36 +59,94 @@ abstract contract Base is Test {
 
     // ------------------------------------------------------------ helpers
 
-    /// @dev Predict the token address the factory will CREATE next so we can pick the right orientation.
-    function nextTokenAddress() internal view returns (address) {
-        return vm.computeCreateAddress(address(factory), vm.getNonce(address(factory)));
+    /// @dev Predict the CREATE2 token address `who` would get for `p` in the current block (mirrors
+    ///      LaunchFactory._salt / _deployToken). Used to pick the right orientation and to pre-grief pools.
+    function predictToken(address who, LaunchFactory.LaunchParams memory p) internal view returns (address) {
+        address[] memory exempt = new address[](3);
+        exempt[0] = address(locker);
+        exempt[1] = address(nfpm);
+        exempt[2] = address(treasury);
+        LaunchToken.Init memory init = LaunchToken.Init({
+            name: p.name,
+            symbol: p.symbol,
+            logo: p.logo,
+            description: p.description,
+            socials: p.socials,
+            deployer: who,
+            protectionBlocks: factory.protectionBlocks(),
+            maxHoldBps: factory.maxHoldBps(),
+            maxBuyBps: factory.maxBuyBps(),
+            buyTaxBps: p.buyTaxBps,
+            sellTaxBps: p.sellTaxBps,
+            marketingWallet: p.marketingWallet == address(0) ? who : p.marketingWallet,
+            teamWallet: p.teamWallet == address(0) ? who : p.teamWallet,
+            marketingBps: p.marketingBps,
+            taxSink: address(locker),
+            exempt: exempt
+        });
+        bytes32 salt = keccak256(abi.encodePacked(who, factory.totalLaunches(), blockhash(block.number - 1)));
+        bytes32 initHash = keccak256(abi.encodePacked(type(LaunchToken).creationCode, abi.encode(init)));
+        return vm.computeCreate2Address(salt, initHash, address(factory));
     }
 
-    function launchParams(string memory sym, uint256 mcapUsdc, uint256 initialBuy)
+    function nextTokenAddress(address who, string memory sym) internal view returns (address) {
+        return predictToken(who, launchParams(sym, 0));
+    }
+
+    function launchParams(string memory sym, uint256 initialBuy)
         internal
-        view
+        pure
         returns (LaunchFactory.LaunchParams memory p)
     {
-        bool isToken0 = nextTokenAddress() < address(usdc);
         p = LaunchFactory.LaunchParams({
             name: string.concat("Token ", sym),
             symbol: sym,
             logo: "ipfs://logo",
             description: "test token",
-            socials: LaunchToken.Socials({website: "", twitter: "https://x.com/t", telegram: ""}),
-            sqrtPriceX96: PriceMath.sqrtPriceX96ForMcap(mcapUsdc, isToken0),
+            socials: LaunchToken.Socials({website: "", twitter: "https://x.com/t", telegram: "", discord: "", farcaster: ""}),
+            payout: address(0),
+            buyTaxBps: 0,
+            sellTaxBps: 0,
+            marketingWallet: address(0),
+            teamWallet: address(0),
+            marketingBps: 0,
             initialBuyUsdc: initialBuy,
             minTokensOut: 0
         });
     }
 
-    function doLaunch(address who, string memory sym, uint256 mcapUsdc, uint256 initialBuy)
+    address marketing = makeAddr("marketing");
+    address team = makeAddr("team");
+
+    /// @dev Tax-mode launch with explicit marketing / team wallets and split.
+    function doLaunchTaxed(address who, string memory sym, uint16 buyTax, uint16 sellTax, uint16 marketingBps)
         internal
         returns (address token, address pool)
     {
-        LaunchFactory.LaunchParams memory p = launchParams(sym, mcapUsdc, initialBuy);
+        LaunchFactory.LaunchParams memory p = launchParams(sym, 0);
+        p.buyTaxBps = buyTax;
+        p.sellTaxBps = sellTax;
+        p.marketingWallet = marketing;
+        p.teamWallet = team;
+        p.marketingBps = marketingBps;
         vm.prank(who);
         (token, pool,) = factory.launch(p);
+    }
+
+    function doLaunch(address who, string memory sym, uint256 initialBuy) internal returns (address token, address pool) {
+        LaunchFactory.LaunchParams memory p = launchParams(sym, initialBuy);
+        vm.prank(who);
+        (token, pool,) = factory.launch(p);
+    }
+
+    /// @dev Admin helper: change only the opening market cap, keep the other params at their defaults.
+    function setStartMcap(uint256 mcapUsdc) internal {
+        uint256 thr = factory.graduationThreshold();
+        uint256 prot = factory.protectionBlocks();
+        uint16 hold = factory.maxHoldBps();
+        uint16 buyCap = factory.maxBuyBps();
+        vm.prank(owner);
+        factory.setLaunchParams(thr, prot, hold, buyCap, mcapUsdc);
     }
 
     function buy(address who, address token, uint256 usdcIn) internal returns (uint256 out) {
@@ -123,6 +181,17 @@ abstract contract Base is Test {
             })
         );
         vm.stopPrank();
+    }
+
+    /// @dev Conversions are sliced (impact cap): call distribute repeatedly, 5 minutes apart, until both
+    ///      token backlogs are empty. Returns the number of calls it took.
+    function drain(address token) internal returns (uint256 calls) {
+        for (; calls < 100; ++calls) {
+            locker.distribute(token, 0);
+            if (locker.unconvertedTokenFees(token) == 0 && locker.unconvertedTax(token) == 0) return calls + 1;
+            vm.warp(block.timestamp + 5 minutes);
+        }
+        revert("drain: not converged");
     }
 
     function spotMcap(address token, address pool) internal view returns (uint256) {

@@ -3,9 +3,10 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Copy, ExternalLink, Globe, Lock, Send, Share2, Star, X } from "lucide-react";
+import { Copy, ExternalLink, Globe, Hash, Lock, MessageCircle, Percent, Send, Share2, ShieldAlert, Star, X } from "lucide-react";
 import { toast } from "sonner";
-import { progressOf, usd, useCandles, useHolders, useToken, useTrades, type TokenView } from "@/lib/api";
+import { isTaxToken, progressOf, usd, useCandles, useHolders, useToken, useTokenCto, useTrades, type TokenView } from "@/lib/api";
+import { useWatchlist } from "@/lib/watchlist";
 import { fmtNum, fmtUsd, shortAddr } from "@/lib/format";
 import { addrUrl, txUrl, SUPPLY_TOKENS } from "@/lib/web3";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,8 @@ export default function TokenPage() {
   const candlesQ = useCandles(address, tf);
   const tradesQ = useTrades(address);
   const holdersQ = useHolders(address);
+  const ctoQ = useTokenCto(address);
+  const watch = useWatchlist();
 
   const candles = useMemo(
     () => (candlesQ.data ?? []).map((c) => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close, volume: usd(c.volumeUsdc) })),
@@ -48,9 +51,13 @@ export default function TokenPage() {
   const progress = progressOf(token);
   const trades = tradesQ.data ?? [];
   const holders = holdersQ.data ?? [];
+  const watching = watch.has(token.address);
+  const burned = Number(token.burnedTokens ?? 0) / 1e18;
+  const openCto = (ctoQ.data ?? []).some((r) => r.status === "open");
 
   return (
-    <div className="mx-auto max-w-7xl">
+    // extra bottom padding on mobile so the fixed buy / sell bar never covers content
+    <div className="mx-auto max-w-7xl pb-20 xl:pb-0">
       <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
         <div className="min-w-0 space-y-4">
           {/* Header */}
@@ -65,6 +72,8 @@ export default function TokenPage() {
                     {token.graduated ? <Badge variant="gold">{t("common.graduated")}</Badge> : <Badge variant="accent">{t("common.graduating")}</Badge>}
                     <Badge variant="secondary"><Lock /> {t("token.lpLocked")}</Badge>
                     {token.protectionActive && <Badge variant="gold">🛡 {t("token.protectionActive").split("：")[0].split(":")[0]}</Badge>}
+                    {openCto && <Badge variant="outline" className="text-gold" title={t("token.ctoOpen")}><ShieldAlert /> CTO</Badge>}
+                    {isTaxToken(token) && <Badge variant="gold" title={t("tax.immutable")}><Percent /> {t("tax.badge").replace("{b}", String(token.buyTaxBps / 100)).replace("{s}", String(token.sellTaxBps / 100))}</Badge>}
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span>{t("common.created")} <TimeAgo ts={token.launchTs} /> ago</span>
@@ -85,16 +94,18 @@ export default function TokenPage() {
                 <Button variant="outline" size="sm" onClick={async () => { await navigator.clipboard.writeText(window.location.href).catch(() => {}); toast.success(t("common.copied")); }}>
                   <Share2 /> {t("token.share")}
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => toast(t("token.watch"), { description: `$${token.symbol}` })}>
-                  <Star /> {t("token.watch")}
+                <Button variant={watching ? "gold" : "outline"} size="sm" onClick={() => watch.toggle(token.address)}>
+                  <Star fill={watching ? "currentColor" : "none"} /> {watching ? t("token.watching") : t("token.watch")}
                 </Button>
                 <Button variant="outline" size="sm" asChild>
                   <a href={addrUrl(token.address)} target="_blank" rel="noreferrer"><ExternalLink /> {t("token.explorer")}</a>
                 </Button>
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-3 border-t pt-4 text-xs sm:grid-cols-4">
-                <Kv label={t("common.mcap")} value={fmtUsd(token.mcapUsd, { compact: true })} />
+              <div className="mt-4 grid grid-cols-2 gap-3 border-t pt-4 text-xs sm:grid-cols-3 lg:grid-cols-6">
+                <Kv label={burned > 0 ? t("token.circulating") : t("common.mcap")} value={fmtUsd(token.circulatingMcapUsd ?? token.mcapUsd, { compact: true })} />
+                <Kv label={t("token.fdv")} value={fmtUsd(token.fdvUsd ?? token.mcapUsd, { compact: true })} />
+                <Kv label={t("token.liquidity")} value={fmtUsd(token.liquidityUsd ?? usd(token.poolUsdc ?? token.pairedUsdc), { compact: true })} title={t("token.liquidityHint")} />
                 <Kv label={t("common.volume24h")} value={fmtUsd(usd(token.volume24hUsdc), { compact: true })} />
                 <Kv label={t("token.paired")} value={fmtUsd(usd(token.poolUsdc ?? token.pairedUsdc), { compact: true })} />
                 <Kv label={t("common.holders")} value={fmtNum(token.holders ?? 0)} />
@@ -178,7 +189,7 @@ export default function TokenPage() {
                     <div key={h.wallet} className="flex items-center gap-3 px-4 py-2.5 text-xs">
                       <span className="w-5 font-mono text-muted-foreground">{i + 1}</span>
                       <a href={addrUrl(h.wallet)} target="_blank" rel="noreferrer" className="font-mono hover:underline">{shortAddr(h.wallet, 6, 4)}</a>
-                      {h.label && <Badge variant={h.label.startsWith("Pool") ? "accent" : h.label === "Creator" ? "gold" : "secondary"}>{h.label}</Badge>}
+                      {h.label && <Badge variant={h.label.startsWith("Pool") ? "accent" : h.label === "Creator" ? "gold" : "secondary"} className={h.label === "Burned" ? "text-burn" : undefined}>{h.label}</Badge>}
                       <div className="ml-auto flex items-center gap-3">
                         <Progress value={h.pct} className="hidden w-32 sm:flex" indicatorClassName={h.label ? undefined : "bg-up"} />
                         <span className="w-14 text-right font-mono tabular">{h.pct.toFixed(2)}%</span>
@@ -199,6 +210,8 @@ export default function TokenPage() {
                       {token.socials.website && <SocialLink href={token.socials.website} icon={<Globe />} label="Website" />}
                       {token.socials.twitter && <SocialLink href={token.socials.twitter} icon={<X />} label="X" />}
                       {token.socials.telegram && <SocialLink href={token.socials.telegram} icon={<Send />} label="Telegram" />}
+                      {token.socials.discord && <SocialLink href={token.socials.discord} icon={<MessageCircle />} label="Discord" />}
+                      {token.socials.farcaster && <SocialLink href={token.socials.farcaster} icon={<Hash />} label="Farcaster" />}
                     </div>
                   </div>
                   <div className="space-y-2 text-xs">
@@ -208,7 +221,17 @@ export default function TokenPage() {
                     <InfoRow k={t("token.poolFee")} v="1%" />
                     <InfoRow k={t("token.creatorFee")} v={`${token.creatorShareBps / 100}%`} />
                     <InfoRow k={t("token.protocolFee")} v={`${100 - token.creatorShareBps / 100}%`} />
+                    <InfoRow k={t("token.payoutAddr")} v={<span className={cn("inline-flex items-center gap-1", token.payout.toLowerCase() !== token.deployer.toLowerCase() && "text-gold")}><Addr value={token.payout} head={10} tail={6} className="text-inherit" /></span>} />
                     <InfoRow k={t("token.feesEarned")} v={fmtUsd(usd(token.feesUsdcTotal))} />
+                    <InfoRow k={t("tax.mode")} v={isTaxToken(token) ? <span className="text-gold">{t("tax.taxed")} · {t("tax.badge").replace("{b}", String(token.buyTaxBps / 100)).replace("{s}", String(token.sellTaxBps / 100))}</span> : t("tax.standard")} />
+                    {isTaxToken(token) && (
+                      <>
+                        <InfoRow k={`${t("tax.marketing")} ${token.taxMarketingBps / 100}%`} v={<Addr value={token.taxMarketingWallet} head={10} tail={6} />} />
+                        <InfoRow k={`${t("tax.team")} ${(10000 - token.taxMarketingBps) / 100}%`} v={<Addr value={token.taxTeamWallet} head={10} tail={6} />} />
+                        <InfoRow k={t("tax.earned")} v={fmtUsd(usd(token.taxUsdcTotal))} />
+                      </>
+                    )}
+                    {burned > 0 && <InfoRow k={t("token.burned")} v={`${fmtNum(burned)} ${token.symbol} (${((burned / SUPPLY_TOKENS) * 100).toFixed(2)}%)`} />}
                     <InfoRow k="Launch tx" v={<a href={txUrl(token.launchTx)} target="_blank" rel="noreferrer" className="hover:underline">{shortAddr(token.launchTx, 8, 6)}</a>} />
                   </div>
                 </div>
@@ -224,7 +247,7 @@ export default function TokenPage() {
       </div>
 
       <div className="mt-4 xl:hidden"><GraduationCard progress={progress} token={token} /></div>
-      <div className="safe-bottom fixed inset-x-0 bottom-[60px] z-30 flex gap-2 border-t bg-background/90 p-3 backdrop-blur xl:hidden">
+      <div className="safe-bottom fixed inset-x-0 bottom-0 z-30 flex gap-2 border-t bg-background/90 p-3 backdrop-blur xl:hidden">
         <Button variant="up" size="xl" className="flex-1" onClick={() => setSheet(true)}>{t("common.buy")}</Button>
         <Button variant="down" size="xl" className="flex-1" onClick={() => setSheet(true)}>{t("common.sell")}</Button>
       </div>
@@ -239,9 +262,9 @@ export default function TokenPage() {
   );
 }
 
-function Kv({ label, value }: { label: string; value: string }) {
+function Kv({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
-    <div>
+    <div title={title}>
       <div className="text-muted-foreground">{label}</div>
       <div className="mt-0.5 font-mono text-sm font-semibold tabular">{value}</div>
     </div>

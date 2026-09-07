@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Info, Lock, Settings2, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Info, Lock, Percent, Settings2, ShieldCheck } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePublicClient, useReadContract } from "wagmi";
 import { formatUnits, maxUint256, parseUnits, type Address } from "viem";
-import type { TokenView } from "@/lib/api";
+import { afterBuyTax, isTaxToken, maxSellable, sellTaxOn, type TokenView } from "@/lib/api";
 import { fmtNum, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ADDR, POOL_FEE, erc20Abi, quoterAbi, routerAbi } from "@/lib/web3";
@@ -81,17 +81,29 @@ export function TradePanel({ token, className, bare }: { token: TokenView; class
     },
   });
 
+  // Tax mode. `out` / `minOut` are pool-side (what the router checks); the token contract then applies the tax:
+  //   buy  → the wallet receives out × (1 − buyTax)
+  //   sell → the seller is charged amountIn × sellTax on top, so the balance must cover amountIn + tax
+  const taxed = isTaxToken(token);
+  const buyTax = token.buyTaxBps ?? 0;
+  const sellTax = token.sellTaxBps ?? 0;
   const out = quote.data ?? 0n;
-  const outNum = side === "buy" ? Number(formatUnits(out, 18)) : Number(formatUnits(out, 6));
+  const outNet = side === "buy" && buyTax > 0 ? afterBuyTax(out, buyTax) : out;
+  const sellTaxAmt = side === "sell" && sellTax > 0 ? sellTaxOn(amountIn, sellTax) : 0n;
+  const sellMax = sellTax > 0 ? maxSellable(tokenBalance, sellTax) : tokenBalance;
+  const outNum = side === "buy" ? Number(formatUnits(outNet, 18)) : Number(formatUnits(out, 6));
   const inNum = side === "buy" ? Number(formatUnits(amountIn, 6)) : Number(formatUnits(amountIn, 18));
   const execPrice = outNum > 0 && inNum > 0 ? (side === "buy" ? inNum / outNum : outNum / inNum) : 0;
   const impact = token.price > 0 && execPrice > 0 ? Math.max(0, (side === "buy" ? execPrice / token.price - 1 : 1 - execPrice / token.price) * 100) : 0;
   const minOut = out - (out * BigInt(Math.round(slippage * 100))) / 10_000n;
+  const minOutNet = side === "buy" && buyTax > 0 ? afterBuyTax(minOut, buyTax) : minOut;
   const fee = side === "buy" ? inNum * 0.01 : outNum * 0.01;
-  const insufficient = side === "buy" ? amountIn > usdcBalance : amountIn > tokenBalance;
+  const insufficient = side === "buy" ? amountIn > usdcBalance : amountIn + sellTaxAmt > tokenBalance;
 
   const recvLabel = side === "buy" ? `${fmtNum(outNum)} ${token.symbol}` : fmtUsd(outNum);
-  const minLabel = side === "buy" ? `${fmtNum(Number(formatUnits(minOut, 18)))} ${token.symbol}` : fmtUsd(Number(formatUnits(minOut, 6)));
+  const minLabel = side === "buy" ? `${fmtNum(Number(formatUnits(minOutNet, 18)))} ${token.symbol}` : fmtUsd(Number(formatUnits(minOut, 6)));
+  const buyTaxTokens = side === "buy" ? Number(formatUnits(out - outNet, 18)) : 0;
+  const sellTaxTokens = Number(formatUnits(sellTaxAmt, 18));
 
   const refresh = () => {
     void usdcBal.refetch();
@@ -199,7 +211,7 @@ export function TradePanel({ token, className, bare }: { token: TokenView; class
               variant="outline"
               size="xs"
               className="font-mono"
-              onClick={() => setAmount(side === "buy" ? String(q) : formatUnits((tokenBalance * BigInt(q)) / 100n, 18))}
+              onClick={() => setAmount(side === "buy" ? String(q) : formatUnits((sellMax * BigInt(q)) / 100n, 18))}
             >
               {side === "buy" ? `$${q}` : `${q}%`}
             </Button>
@@ -208,13 +220,27 @@ export function TradePanel({ token, className, bare }: { token: TokenView; class
       </div>
 
       <div className="mt-3 space-y-1.5 rounded-lg bg-muted p-3 text-xs">
-        <Row label={t("token.youReceive")} value={amountIn > 0n ? (quote.isFetching && !quote.data ? "…" : recvLabel) : "—"} strong />
+        <Row label={side === "buy" && buyTax > 0 ? `${t("token.youReceive")} (${t("tax.afterTax")})` : t("token.youReceive")} value={amountIn > 0n ? (quote.isFetching && !quote.data ? "…" : recvLabel) : "—"} strong />
         <Row label={t("token.minReceived")} value={amountIn > 0n && out > 0n ? minLabel : "—"} />
         <Row label={t("token.priceImpact")} value={amountIn > 0n && out > 0n ? `${impact.toFixed(2)}%` : "—"} className={impactTone(impact)} />
         <Row label={`${t("common.fee")} (1%)`} value={amountIn > 0n ? fmtUsd(fee) : "—"} />
+        {side === "buy" && buyTax > 0 && <Row label={`${t("tax.taxLine")} (${buyTax / 100}%)`} value={amountIn > 0n && out > 0n ? `−${fmtNum(buyTaxTokens)} ${token.symbol}` : "—"} className="text-gold" />}
+        {side === "sell" && sellTax > 0 && (
+          <>
+            <Row label={`${t("tax.sellOnTop")} (${sellTax / 100}%)`} value={amountIn > 0n ? `−${fmtNum(sellTaxTokens)} ${token.symbol}` : "—"} className="text-gold" />
+            <Row label={t("tax.totalCost")} value={amountIn > 0n ? `${fmtNum(inNum + sellTaxTokens)} ${token.symbol}` : "—"} />
+          </>
+        )}
         <Row label={t("common.slippage")} value={`${slippage}%`} />
         {quote.isError && <div className="text-down">{t("tx.quoteFailed")}</div>}
       </div>
+
+      {taxed && (
+        <div className="mt-3 flex items-start gap-2 rounded-lg bg-gold/10 p-2.5 text-[11px] text-gold">
+          <Percent size={14} className="mt-0.5 shrink-0" />
+          <span>{t("tax.badge").replace("{b}", String(buyTax / 100)).replace("{s}", String(sellTax / 100))} · {t("tax.immutable")}</span>
+        </div>
+      )}
 
       {token.protectionActive && (
         <div className="mt-3 flex items-start gap-2 rounded-lg bg-gold/15 p-2.5 text-[11px] text-gold">
@@ -267,6 +293,8 @@ export function TradePanel({ token, className, bare }: { token: TokenView; class
               <Row label={t("token.minReceived")} value={minLabel} />
               <Row label={t("token.priceImpact")} value={`${impact.toFixed(2)}%`} className={impactTone(impact)} />
               <Row label={`${t("common.fee")} (1%)`} value={fmtUsd(fee)} />
+              {side === "buy" && buyTax > 0 && <Row label={`${t("tax.taxLine")} (${buyTax / 100}%)`} value={`−${fmtNum(buyTaxTokens)} ${token.symbol}`} className="text-gold" />}
+              {side === "sell" && sellTax > 0 && <Row label={`${t("tax.sellOnTop")} (${sellTax / 100}%)`} value={`−${fmtNum(sellTaxTokens)} ${token.symbol}`} className="text-gold" />}
               <Row label="Gas" value="~$0.01 USDC" />
             </div>
             {impact >= 5 && (

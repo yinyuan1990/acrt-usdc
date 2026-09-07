@@ -26,7 +26,7 @@ export function Ticker() {
         return (
         <Link key={k + a.tx + i} href={`/token/${a.token}`} className="flex items-center gap-2 border-r px-3 py-1.5 text-xs hover:bg-accent">
           {isBurn ? <span className="text-[13px] leading-none">🔥</span> : <WalletDot address={a.wallet} />}
-          <span className="font-mono text-muted-foreground">{isBurn ? "Treasury" : shortAddr(a.wallet, 4, 3)}</span>
+          <span className="font-mono text-muted-foreground">{isBurn ? "ArcLaunch" : shortAddr(a.wallet, 4, 3)}</span>
           <span className={cn("font-medium", isBurn ? "text-gold" : a.kind === "buy" ? "text-up" : a.kind === "sell" ? "text-down" : "text-gold")}>
             {isBurn ? t("activity.burned") : a.kind === "buy" ? t("activity.bought") : a.kind === "sell" ? t("activity.sold") : t("activity.launched")}
           </span>
@@ -71,8 +71,11 @@ export function Ticker() {
         </div>
       </div>
       {top.length > 0 && (
-        <div className="no-scrollbar hidden overflow-hidden md:block">
-          <div className="marquee">{[priceRow("a"), priceRow("b")]}</div>
+        <div className="hidden items-stretch bg-background/40 md:flex">
+          <div className="flex shrink-0 items-center border-r px-3 font-mono text-[10px] text-muted-foreground">{t("common.price")}</div>
+          <div className="no-scrollbar flex-1 overflow-hidden opacity-90">
+            <div className="marquee">{[priceRow("a"), priceRow("b")]}</div>
+          </div>
         </div>
       )}
     </div>

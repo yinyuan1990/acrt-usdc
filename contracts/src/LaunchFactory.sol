@@ -7,13 +7,29 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {LaunchToken} from "./LaunchToken.sol";
 import {FeeLocker} from "./FeeLocker.sol";
-import {IUniswapV3Factory, IUniswapV3Pool, INonfungiblePositionManager, ISwapRouter} from "./interfaces/IUniswapV3.sol";
+import {PriceMath} from "./libraries/PriceMath.sol";
+import {SwapGuard} from "./libraries/SwapGuard.sol";
+import {
+    IUniswapV3Factory,
+    IUniswapV3Pool,
+    IUniswapV3SwapCallback,
+    INonfungiblePositionManager,
+    ISwapRouter
+} from "./interfaces/IUniswapV3.sol";
 
 /// @title LaunchFactory
 /// @notice One transaction: deploy a fixed-supply token, create its USDC pool on Uniswap V3, seed the
 ///         entire supply as single-sided liquidity, lock the LP position forever, optionally execute the
 ///         creator's first buy. No bonding curve, no migration: the pool created here is the market.
-contract LaunchFactory is Ownable, ReentrancyGuard {
+/// @dev Fair launch: every token opens at the same market cap (`startMcapUsdc`, admin-set, applies to
+///      new launches only). The creator cannot choose the opening price.
+///
+///      Griefing resistance: the token address is derived with CREATE2 from a salt that includes the previous
+///      block hash, so nobody can pre-create the Uniswap pool for a future launch; and if a pool for the token
+///      already exists (same-block front-run) the launch still succeeds — an empty pool is re-priced with a
+///      zero-liquidity swap, a pool that somehow holds liquidity makes the launch revert (`PoolTampered`) and
+///      the next attempt gets a fresh address.
+contract LaunchFactory is Ownable, ReentrancyGuard, IUniswapV3SwapCallback {
     using SafeERC20 for IERC20;
 
     // ---------------------------------------------------------------- immutables
@@ -31,16 +47,22 @@ contract LaunchFactory is Ownable, ReentrancyGuard {
     address public immutable treasury;
 
     // ---------------------------------------------------------------- operational params (new launches only)
-    uint256 public creationFee = 2e6; // 2 USDC
+    uint256 public creationFee = 1e6; // 1 USDC
     bool public creationFeeEnabled = true;
     mapping(address => bool) public feeWaived;
+    /// @dev Where creation fees are sent (the ecosystem multisig). Fixed at deployment.
+    address public immutable feeRecipient;
     uint256 public graduationThreshold = 10_000e6; // USDC in pool
     uint256 public protectionBlocks = 20; // ~10s on Arc
     uint16 public maxHoldBps = 500; // 5%
     uint16 public maxBuyBps = 550; // 5.5%
-    /// @dev |start tick| bounds: token0 orientation uses negative ticks, token1 positive.
-    int24 public startTickAbsMin = 322_000; // ≈ $10M start mcap
-    int24 public startTickAbsMax = 421_500; // ≈ $500 start mcap
+    /// @dev Opening market cap for every new launch, in USDC (6 decimals).
+    uint256 public startMcapUsdc = 5_000e6;
+    uint256 public constant MIN_START_MCAP = 500e6;
+    uint256 public constant MAX_START_MCAP = 10_000_000e6;
+    /// @dev Cap for creator-set buy / sell taxes (each), applies to new launches only. 1000 = 10%.
+    uint16 public maxTaxBps = 1_000;
+    uint16 public constant MAX_TAX_CAP = 2_500;
 
     // ---------------------------------------------------------------- state
     struct Launch {
@@ -63,7 +85,14 @@ contract LaunchFactory is Ownable, ReentrancyGuard {
         string logo;
         string description;
         LaunchToken.Socials socials;
-        uint160 sqrtPriceX96; // initial pool price, computed off-chain (see indexer/sdk)
+        address payout; // optional fee wallet for the creator share; address(0) = msg.sender
+        // tax mode (0/0 = standard token). Fixed forever once launched. The tax is sold for USDC by the
+        // FeeLocker and split `marketingBps` / rest between the two wallets (same for buys and sells).
+        uint16 buyTaxBps;
+        uint16 sellTaxBps;
+        address marketingWallet; // address(0) = msg.sender
+        address teamWallet; // address(0) = msg.sender
+        uint16 marketingBps; // share of the tax to marketing; 10000 − marketingBps to team
         uint256 initialBuyUsdc; // optional first buy, pulled from msg.sender
         uint256 minTokensOut; // slippage guard for the first buy
     }
@@ -83,12 +112,19 @@ contract LaunchFactory is Ownable, ReentrancyGuard {
         uint256 creationFeePaid
     );
     event Graduated(address indexed token, uint256 pairedUsdc, uint256 threshold);
+    /// @dev Emitted for tax-mode launches only, right after TokenLaunched.
+    event TaxConfigured(
+        address indexed token, uint16 buyTaxBps, uint16 sellTaxBps, address marketingWallet, address teamWallet, uint16 marketingBps
+    );
     event ParamsUpdated();
     event FeeWaiverSet(address indexed account, bool waived);
 
-    error StartPriceOutOfRange(int24 tick);
+    error StartMcapOutOfRange(uint256 mcap);
+    error TaxOutOfRange();
     error ZeroAddress();
     error NoLiquidity();
+    error PoolTampered();
+    error NotPool();
     error UnknownToken();
     error AlreadyGraduated();
     error NotGraduated();
@@ -100,11 +136,12 @@ contract LaunchFactory is Ownable, ReentrancyGuard {
         address usdc_,
         address locker_,
         address treasury_,
+        address feeRecipient_,
         address owner_
     ) Ownable(owner_) {
         if (
             uniFactory_ == address(0) || positionManager_ == address(0) || router_ == address(0) || usdc_ == address(0)
-                || locker_ == address(0) || treasury_ == address(0)
+                || locker_ == address(0) || treasury_ == address(0) || feeRecipient_ == address(0)
         ) revert ZeroAddress();
         uniFactory = IUniswapV3Factory(uniFactory_);
         positionManager = INonfungiblePositionManager(positionManager_);
@@ -112,6 +149,7 @@ contract LaunchFactory is Ownable, ReentrancyGuard {
         usdc = usdc_;
         locker = FeeLocker(locker_);
         treasury = treasury_;
+        feeRecipient = feeRecipient_;
     }
 
     // ---------------------------------------------------------------- admin (affects new launches only)
@@ -132,17 +170,21 @@ contract LaunchFactory is Ownable, ReentrancyGuard {
         uint256 protectionBlocks_,
         uint16 maxHoldBps_,
         uint16 maxBuyBps_,
-        int24 startTickAbsMin_,
-        int24 startTickAbsMax_
+        uint256 startMcapUsdc_
     ) external onlyOwner {
         require(maxHoldBps_ <= 10_000 && maxBuyBps_ <= 10_000, "bps");
-        require(startTickAbsMin_ > 0 && startTickAbsMax_ < MAX_TICK && startTickAbsMin_ < startTickAbsMax_, "ticks");
+        if (startMcapUsdc_ < MIN_START_MCAP || startMcapUsdc_ > MAX_START_MCAP) revert StartMcapOutOfRange(startMcapUsdc_);
         graduationThreshold = graduationThreshold_;
         protectionBlocks = protectionBlocks_;
         maxHoldBps = maxHoldBps_;
         maxBuyBps = maxBuyBps_;
-        startTickAbsMin = startTickAbsMin_;
-        startTickAbsMax = startTickAbsMax_;
+        startMcapUsdc = startMcapUsdc_;
+        emit ParamsUpdated();
+    }
+
+    function setMaxTaxBps(uint16 maxTaxBps_) external onlyOwner {
+        if (maxTaxBps_ > MAX_TAX_CAP) revert TaxOutOfRange();
+        maxTaxBps = maxTaxBps_;
         emit ParamsUpdated();
     }
 
@@ -154,22 +196,23 @@ contract LaunchFactory is Ownable, ReentrancyGuard {
     }
 
     function launch(LaunchParams calldata p) external nonReentrant returns (address token, address pool, uint256 positionId) {
-        // 1) creation fee → treasury
+        if (p.buyTaxBps > maxTaxBps || p.sellTaxBps > maxTaxBps || p.marketingBps > 10_000) revert TaxOutOfRange();
+
+        // 1) creation fee → fee recipient (ecosystem multisig)
         uint256 fee = quoteCreationFee(msg.sender);
-        if (fee > 0) IERC20(usdc).safeTransferFrom(msg.sender, treasury, fee);
+        if (fee > 0) IERC20(usdc).safeTransferFrom(msg.sender, feeRecipient, fee);
 
         // 2) token (entire supply minted to this factory)
         token = _deployToken(p);
         bool isToken0 = token < usdc;
 
-        // 3) pool at the requested start price
-        pool = uniFactory.createPool(token, usdc, POOL_FEE);
-        IUniswapV3Pool(pool).initialize(p.sqrtPriceX96);
+        // 3) pool at the platform-wide opening market cap (same for every launch)
+        pool = _preparePool(token, isToken0);
         LaunchToken(token).setPool(pool);
 
         // 4) + 5) single-sided range on the token side of the price, minted straight into the locker
         positionId = _mintLocked(token, pool, isToken0);
-        locker.register(token, usdc, positionId, msg.sender, CREATOR_SHARE_BPS);
+        locker.register(token, usdc, pool, positionId, msg.sender, p.payout == address(0) ? msg.sender : p.payout, CREATOR_SHARE_BPS);
 
         // 6) optional first buy, executed inside the launch block (only the deployer may receive here)
         if (p.initialBuyUsdc > 0) _initialBuy(token, p.initialBuyUsdc, p.minTokensOut);
@@ -191,6 +234,54 @@ contract LaunchFactory is Ownable, ReentrancyGuard {
         allTokens.push(token);
 
         emit TokenLaunched(token, msg.sender, pool, positionId, isToken0, endBlock, graduationThreshold, p.initialBuyUsdc, fee);
+        if (p.buyTaxBps > 0 || p.sellTaxBps > 0) {
+            emit TaxConfigured(token, p.buyTaxBps, p.sellTaxBps, _orSender(p.marketingWallet), _orSender(p.teamWallet), p.marketingBps);
+        }
+    }
+
+    function _orSender(address a) internal view returns (address) {
+        return a == address(0) ? msg.sender : a;
+    }
+
+    /// @dev CREATE2 salt: unknowable before the previous block is sealed, so a future token's pool cannot be
+    ///      pre-created; unique per (creator, launch count) inside a block.
+    function _salt() internal view returns (bytes32) {
+        return keccak256(abi.encodePacked(msg.sender, allTokens.length, blockhash(block.number - 1)));
+    }
+
+    /// @dev Returns a pool for (token, USDC, 1%) priced at the opening market cap, whether or not one exists.
+    function _preparePool(address token, bool isToken0) internal returns (address pool) {
+        uint160 target = PriceMath.sqrtPriceX96ForMcap(startMcapUsdc, isToken0);
+        pool = uniFactory.getPool(token, usdc, POOL_FEE);
+        if (pool == address(0)) {
+            pool = uniFactory.createPool(token, usdc, POOL_FEE);
+            IUniswapV3Pool(pool).initialize(target);
+        } else {
+            (uint160 current,,,,,,) = IUniswapV3Pool(pool).slot0();
+            if (current == 0) IUniswapV3Pool(pool).initialize(target);
+            else if (current != target) _repriceEmptyPool(pool, current, target);
+        }
+        // oracle depth for the TWAP guard used by FeeLocker / Treasury swaps
+        IUniswapV3Pool(pool).increaseObservationCardinalityNext(SwapGuard.OBSERVATIONS);
+    }
+
+    /// @dev A pool someone else created and initialized at an arbitrary price. Nobody can have added liquidity
+    ///      (the token did not exist yet), so a swap towards `target` crosses no liquidity and moves nothing but
+    ///      the price. If anything would be owed, the callback reverts with PoolTampered.
+    function _repriceEmptyPool(address pool, uint160 current, uint160 target) internal {
+        if (IUniswapV3Pool(pool).liquidity() != 0) revert PoolTampered();
+        _repricing = pool;
+        IUniswapV3Pool(pool).swap(address(this), target < current, 1, target, "");
+        _repricing = address(0);
+        (uint160 after_,,,,,,) = IUniswapV3Pool(pool).slot0();
+        if (after_ != target) revert PoolTampered();
+    }
+
+    address private _repricing;
+
+    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata) external view {
+        if (msg.sender != _repricing || _repricing == address(0)) revert NotPool();
+        if (amount0Delta > 0 || amount1Delta > 0) revert PoolTampered();
     }
 
     function _deployToken(LaunchParams calldata p) internal returns (address) {
@@ -199,7 +290,7 @@ contract LaunchFactory is Ownable, ReentrancyGuard {
         exempt[1] = address(positionManager);
         exempt[2] = treasury;
         return address(
-            new LaunchToken(
+            new LaunchToken{salt: _salt()}(
                 LaunchToken.Init({
                     name: p.name,
                     symbol: p.symbol,
@@ -210,6 +301,12 @@ contract LaunchFactory is Ownable, ReentrancyGuard {
                     protectionBlocks: protectionBlocks,
                     maxHoldBps: maxHoldBps,
                     maxBuyBps: maxBuyBps,
+                    buyTaxBps: p.buyTaxBps,
+                    sellTaxBps: p.sellTaxBps,
+                    marketingWallet: _orSender(p.marketingWallet),
+                    teamWallet: _orSender(p.teamWallet),
+                    marketingBps: p.marketingBps,
+                    taxSink: address(locker),
                     exempt: exempt
                 })
             )
@@ -221,11 +318,9 @@ contract LaunchFactory is Ownable, ReentrancyGuard {
         (, int24 tick,,,,,) = IUniswapV3Pool(pool).slot0();
         int24 spacing = IUniswapV3Pool(pool).tickSpacing();
         if (isToken0) {
-            if (tick > -startTickAbsMin || tick < -startTickAbsMax) revert StartPriceOutOfRange(tick);
             tickLower = _floorTick(tick, spacing) + spacing; // first tick strictly above price
             tickUpper = _floorTick(MAX_TICK, spacing);
         } else {
-            if (tick < startTickAbsMin || tick > startTickAbsMax) revert StartPriceOutOfRange(tick);
             tickLower = _ceilTick(MIN_TICK, spacing);
             tickUpper = _floorTick(tick, spacing); // last tick at/below price
         }

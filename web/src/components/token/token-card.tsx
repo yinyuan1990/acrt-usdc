@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { GraduationCap, Users } from "lucide-react";
-import { progressOf, usd, type TokenView } from "@/lib/api";
+import { GraduationCap, Percent, Users } from "lucide-react";
+import { isTaxToken, progressOf, usd, type TokenView, type TokenWindow } from "@/lib/api";
 import { fmtUsd, fmtNum } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/components/providers";
@@ -11,9 +11,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { PctChange, TimeAgo, TokenAvatar } from "@/components/shared";
 
-export function TokenCard({ token }: { token: TokenView }) {
+export function TokenCard({ token, window = "24h" }: { token: TokenView; window?: TokenWindow }) {
   const { t } = useApp();
   const progress = progressOf(token);
+  const volume = window === "24h" ? usd(token.volume24hUsdc) : usd(token.volumeUsdc ?? token.volume24hUsdc);
+  const volumeLabel = window === "24h" ? t("common.volume24h") : `${t(`explore.window.${window}`)} ${t("common.volume")}`;
 
   return (
     <Link href={`/token/${token.address}`} className="fade-up block">
@@ -25,6 +27,7 @@ export function TokenCard({ token }: { token: TokenView }) {
               <div className="flex items-center gap-2">
                 <h3 className="truncate font-semibold">{token.name}</h3>
                 <span className="font-mono text-xs text-muted-foreground">${token.symbol}</span>
+                {isTaxToken(token) && <Badge variant="gold" className="px-1.5 py-0 text-[10px]" title={`${t("tax.buy")} ${token.buyTaxBps / 100}% · ${t("tax.sell")} ${token.sellTaxBps / 100}%`}><Percent /> {token.buyTaxBps / 100}/{token.sellTaxBps / 100}%</Badge>}
               </div>
               <p className="mt-0.5 line-clamp-2 text-xs text-secondary-foreground">{token.description || "—"}</p>
             </div>
@@ -40,8 +43,8 @@ export function TokenCard({ token }: { token: TokenView }) {
               <div className="font-mono text-xs text-foreground tabular">{fmtUsd(token.mcapUsd, { compact: true })}</div>
             </div>
             <div>
-              <div>{t("common.volume24h")}</div>
-              <div className="font-mono text-xs text-foreground tabular">{fmtUsd(usd(token.volume24hUsdc), { compact: true })}</div>
+              <div>{volumeLabel}</div>
+              <div className="font-mono text-xs text-foreground tabular">{fmtUsd(volume, { compact: true })}</div>
             </div>
             <div className="text-right">
               <div className="inline-flex items-center gap-1">

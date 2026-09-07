@@ -42,25 +42,30 @@ contract Smoke is Script {
         else if (step == keccak256("fees")) _fees(vm.envAddress("TOKEN"));
     }
 
-    function _params(bool isToken0, uint256 mcap, uint256 firstBuy) internal view returns (LaunchFactory.LaunchParams memory p) {
+    function _params(uint256 firstBuy) internal view returns (LaunchFactory.LaunchParams memory p) {
         p = LaunchFactory.LaunchParams({
             name: vm.envOr("NAME", string("Arc Cat")),
             symbol: vm.envOr("SYMBOL", string("ACAT")),
-            logo: "https://launch.hzmrbq.com/logo/acat.png",
+            logo: "https://arclaunch.top/brand/logo-navy.png",
             description: "First cat on Arc. Smoke test token.",
-            socials: LaunchToken.Socials({website: "https://launch.hzmrbq.com", twitter: "https://x.com/arclaunch", telegram: ""}),
-            sqrtPriceX96: PriceMath.sqrtPriceX96ForMcap(mcap, isToken0),
+            socials: LaunchToken.Socials({website: "https://arclaunch.top", twitter: "https://x.com/arclaunch_", telegram: "https://t.me/ArcLaunchCommunity", discord: "", farcaster: ""}),
+            payout: address(0),
+            buyTaxBps: 0,
+            sellTaxBps: 0,
+            marketingWallet: address(0),
+            teamWallet: address(0),
+            marketingBps: 0,
             initialBuyUsdc: firstBuy,
             minTokensOut: 0
         });
     }
 
     function _launch() internal {
-        uint256 mcap = vm.envOr("MCAP_USDC", uint256(5_000e6));
         uint256 firstBuy = vm.envOr("FIRST_BUY", uint256(3e6));
         address predicted = vm.computeCreateAddress(address(factory), vm.getNonce(address(factory)));
         bool isToken0 = predicted < usdc;
-        LaunchFactory.LaunchParams memory p = _params(isToken0, mcap, firstBuy);
+        console2.log("platform start mcap usdc6", factory.startMcapUsdc());
+        LaunchFactory.LaunchParams memory p = _params(firstBuy);
         uint256 need = factory.quoteCreationFee(me) + firstBuy;
 
         vm.startBroadcast(pk);
@@ -116,10 +121,10 @@ contract Smoke is Script {
         uint256 meBefore = IERC20(usdc).balanceOf(me);
         uint256 trBefore = IERC20(usdc).balanceOf(treasury);
         vm.startBroadcast(pk);
-        (uint256 q, uint256 t) = locker.distribute(token);
+        (uint256 q, uint256 fromToken) = locker.distribute(token, 0);
         vm.stopBroadcast();
         console2.log("collected usdc", q);
-        console2.log("collected token", t);
+        console2.log("usdc from token-side fees", fromToken);
         console2.log("creator +usdc", IERC20(usdc).balanceOf(me) - meBefore);
         console2.log("treasury +usdc", IERC20(usdc).balanceOf(treasury) - trBefore);
     }

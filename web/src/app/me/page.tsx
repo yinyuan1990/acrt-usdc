@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { ExternalLink, Wallet } from "lucide-react";
+import { ExternalLink, Languages, LogOut, Palette, Users, Wallet } from "lucide-react";
+import { XFollow } from "@/components/layout/socials";
+import { useReadContract } from "wagmi";
+import { formatUnits, type Address } from "viem";
 import { progressOf, usd, useCreator, useWallet } from "@/lib/api";
 import { fmtNum, fmtUsd, shortAddr } from "@/lib/format";
-import { txUrl } from "@/lib/web3";
+import { ADDR, erc20Abi, txUrl } from "@/lib/web3";
 import { useApp } from "@/components/providers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +16,50 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Empty, PctChange, SectionTitle, Stat, TimeAgo, TokenAvatar } from "@/components/shared";
 
+/** Language / theme live here (not in the top bar) so the header stays clean on mobile. */
+function SettingsCard() {
+  const { t, locale, setLocale, theme, setTheme, connected, address, wrongChain, toggleConnect } = useApp();
+  // live on-chain USDC balance (6dp) so the number shows the moment the wallet connects
+  const bal = useReadContract({
+    address: ADDR.usdc, abi: erc20Abi, functionName: "balanceOf", args: address ? [address as Address] : undefined,
+    query: { enabled: !!address && !wrongChain, refetchInterval: 8000 },
+  });
+  return (
+    <Card size="sm">
+      <CardContent className="grid gap-4 sm:grid-cols-3">
+        <div>
+          <div className="label mb-1.5 flex items-center gap-1.5"><Languages size={12} /> {t("me.language")}</div>
+          <Tabs value={locale} onValueChange={(v) => setLocale(v as typeof locale)}>
+            <TabsList className="w-full"><TabsTrigger value="zh">中文</TabsTrigger><TabsTrigger value="en">English</TabsTrigger></TabsList>
+          </Tabs>
+        </div>
+        <div>
+          <div className="label mb-1.5 flex items-center gap-1.5"><Palette size={12} /> {t("me.theme")}</div>
+          <Tabs value={theme} onValueChange={(v) => setTheme(v as typeof theme)}>
+            <TabsList className="w-full"><TabsTrigger value="arc">{t("theme.arc")}</TabsTrigger><TabsTrigger value="terminal">{t("theme.terminal")}</TabsTrigger></TabsList>
+          </Tabs>
+        </div>
+        <div>
+          <div className="label mb-1.5 flex items-center gap-1.5"><Wallet size={12} /> {t("common.connect")}</div>
+          <Button variant={wrongChain ? "gold" : connected ? "outline" : "glow"} size="lg" className="w-full font-mono" onClick={toggleConnect}>
+            {wrongChain ? t("wallet.switch") : connected && address ? <><LogOut /> {shortAddr(address, 6, 4)}</> : <><Wallet /> {t("common.connect")}</>}
+          </Button>
+          {connected && !wrongChain && (
+            <div className="mt-2 flex items-center justify-between rounded-md bg-muted px-2.5 py-1.5 text-xs">
+              <span className="inline-flex items-center gap-1.5 text-muted-foreground"><span className="size-3 rounded-full bg-[#2775ca]" /> USDC {t("common.balance")}</span>
+              <span className="font-mono font-semibold tabular">{bal.data !== undefined ? fmtUsd(Number(formatUnits(bal.data, 6))) : "…"}</span>
+            </div>
+          )}
+        </div>
+        <div className="sm:col-span-3">
+          <div className="label mb-1.5 flex items-center gap-1.5"><Users size={12} /> {t("me.community")}</div>
+          <XFollow row />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function MePage() {
   const { t, connected, address, toggleConnect } = useApp();
   const { data } = useWallet(address);
@@ -20,8 +67,9 @@ export default function MePage() {
 
   if (!connected || !address) {
     return (
-      <div className="mx-auto max-w-6xl">
-        <h1 className="mb-4 text-2xl font-bold tracking-tight md:text-3xl">{t("me.title")}</h1>
+      <div className="mx-auto max-w-6xl space-y-4">
+        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{t("me.title")}</h1>
+        <SettingsCard />
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
             <span className="flex size-12 items-center justify-center rounded-full bg-primary/15 text-primary"><Wallet size={22} /></span>
@@ -39,6 +87,8 @@ export default function MePage() {
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{t("me.title")}</h1>
+
+      <SettingsCard />
 
       <section className="grid gap-3 sm:grid-cols-3">
         <Stat label={t("me.value")} value={data ? fmtUsd(value) : "…"} />

@@ -2,7 +2,7 @@
  * Browser end-to-end test against the live site with a real (test) wallet.
  * A minimal EIP-1193 provider is injected into the page; signing happens in Node via viem.
  *
- *   node ops/e2e.mjs [https://launch.hzmrbq.com]
+ *   node ops/e2e.mjs [https://arclaunch.top]
  * Screenshots → docs/screens/e2e-*.png ; summary → ops/.tmp/e2e-report.json
  */
 import puppeteer from "puppeteer-core";
@@ -12,7 +12,7 @@ import { createPublicClient, createWalletClient, http, parseAbi, formatUnits } f
 import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
 
-const BASE = process.argv[2] ?? "https://launch.hzmrbq.com";
+const BASE = process.argv[2] ?? "https://arclaunch.top";
 const OUT = resolve(import.meta.dirname, "../docs/screens");
 mkdirSync(OUT, { recursive: true });
 const wallet = JSON.parse(readFileSync(resolve(import.meta.dirname, ".tmp/e2e-wallet.json"), "utf8"));
@@ -107,10 +107,11 @@ try {
   // 1) home + connect
   await page.goto(`${BASE}/?theme=arc&lang=en`, { waitUntil: "domcontentloaded" });
   await sleep(2500);
-  await clickByText(/connect wallet/i);
+  await clickByText(/^connect( wallet)?$/i);
   await sleep(2500);
-  await waitText(new RegExp(account.address.slice(0, 6), "i"), 20_000);
-  log("connected", { shown: account.address.slice(0, 6) });
+  // header shows the address as 0xAB…CDEF (4 + 4)
+  await waitText(new RegExp(account.address.slice(0, 4) + ".*" + account.address.slice(-4), "i"), 20_000);
+  log("connected", { shown: account.address.slice(0, 4) + "…" + account.address.slice(-4) });
   await shot("01-connected");
 
   // 2) create token
@@ -122,10 +123,11 @@ try {
   await clickByText(/^next$/i);
   await sleep(400);
   await page.type("#desc", "Automated end-to-end launch from ops/e2e.mjs");
-  await page.type("#x", "https://x.com/arclaunch");
+  await page.type("#x", "https://x.com/arclaunch_");
   await clickByText(/^next$/i);
   await sleep(400);
-  await clickByText(/\$5\.0K|\$5K/);
+  // opening mcap is platform-wide (fair launch) — the form only displays it
+  await waitText(/fair launch/i, 10_000);
   await page.type("#buy", "1");
   await sleep(1200);
   await shot("02-create-form");
@@ -140,6 +142,14 @@ try {
   await page.waitForSelector("input[type=number]", { timeout: 60_000 });
   await sleep(2500);
   await shot("03-token-page");
+
+  // 2b) watchlist toggle (localStorage) + new header metrics
+  await clickByText(/^watch$/i);
+  await sleep(500);
+  await waitText(/watching/i, 5_000);
+  await waitText(/FDV/i, 5_000);
+  await waitText(/liquidity/i, 5_000);
+  log("watch toggled; FDV + liquidity shown");
 
   // 3) buy 1 USDC
   await page.type("input[type=number]", "1");
@@ -215,8 +225,30 @@ try {
   await page.goto(`${BASE}/creator?lang=en`, { waitUntil: "domcontentloaded" });
   await sleep(3500);
   await waitText(new RegExp(sym), 20_000);
+  await waitText(/payout address/i, 10_000);
+  const creatorApi = await fetch(`${BASE}/api/creator/${account.address}`).then((r) => r.json());
+  const mine = creatorApi.tokens.find((t) => t.address.toLowerCase() === tokenAddr.toLowerCase());
+  if (!mine || mine.payout.toLowerCase() !== account.address.toLowerCase()) throw new Error("creator API payout mismatch");
+  if (mine.pendingPayout !== null) throw new Error("unexpected pending takeover");
   await shot("06-creator");
-  log("creator page shows the new token");
+  log("creator page shows the new token + payout row; API payout ok");
+
+  // 6b) docs page renders with live config
+  await page.goto(`${BASE}/docs?lang=en`, { waitUntil: "domcontentloaded" });
+  await sleep(3000);
+  await waitText(/Integration/i, 15_000);
+  await waitText(/TokenLaunched \(topic0\)/i, 15_000);
+  await waitText(/Request a community takeover/i, 15_000);
+  await shot("06b-docs");
+  log("docs page ok (integration + CTO form)");
+
+  // 6c) home watchlist tab lists the watched token
+  await page.goto(`${BASE}/?lang=en`, { waitUntil: "domcontentloaded" });
+  await sleep(3000);
+  await clickByText(/watchlist/i);
+  await sleep(1500);
+  await waitText(new RegExp(sym), 15_000);
+  log("watchlist tab shows the token");
 
   // 7) portfolio
   await page.goto(`${BASE}/me?lang=en`, { waitUntil: "domcontentloaded" });

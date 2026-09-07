@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ArcLaunch · 曲线路线（曲线 → 毕业迁移）合约流程</title>
+<style>
+  :root{--bg:#0b0f17;--card:#121826;--line:#1f2937;--text:#e5e7eb;--muted:#9ca3af;--blue:#3b82f6;--green:#22c55e;--amber:#f59e0b;--red:#ef4444;--purple:#a855f7;--cyan:#06b6d4;--pink:#ec4899}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.65}
+  .wrap{max-width:1120px;margin:0 auto;padding:40px 24px 80px}
+  h1{font-size:30px;margin:0 0 6px}
+  h2{font-size:22px;margin:56px 0 16px;padding-left:12px;border-left:4px solid var(--purple)}
+  h3{font-size:16px;margin:0 0 6px}
+  p{margin:8px 0}
+  .sub{color:var(--muted);font-size:14px}
+  .tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);margin-right:6px}
+  .tag.new{border-color:var(--red);color:#fca5a5} .tag.rw{border-color:var(--amber);color:#fcd34d} .tag.keep{border-color:var(--green);color:#86efac} .tag.v4{border-color:var(--pink);color:#f9a8d4}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+  .card .role{font-size:14px}
+  .card .meta{font-size:13px;color:var(--muted);margin-top:10px}
+  .meta b{color:var(--text)}
+  .ana{margin-top:10px;padding:10px 12px;background:#0f1522;border-left:3px solid var(--amber);border-radius:8px;font-size:14px}
+  .ana::before{content:"生活比喻 ";color:var(--amber);font-weight:600}
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px}
+  th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:13px}
+  code{background:#0f1522;padding:1px 6px;border-radius:5px;font-size:13px;color:#93c5fd}
+  .ok{color:var(--green)} .warn{color:var(--amber)} .no{color:var(--red)}
+  .diagram{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;overflow-x:auto}
+  svg{width:100%;height:auto;display:block;min-width:860px}
+  .callout{background:#0f1a14;border:1px solid #14532d;border-radius:12px;padding:16px 20px;margin-top:16px}
+  .callout.warn{background:#1a1408;border-color:#78350f}
+  .callout.red{background:#1a0f0f;border-color:#7f1d1d}
+  .steps{counter-reset:s;display:grid;gap:10px}
+  .step{display:flex;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+  .step::before{counter-increment:s;content:counter(s);flex:0 0 28px;height:28px;border-radius:50%;background:var(--purple);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.two{grid-template-columns:1fr}}
+  .big{font-size:40px;font-weight:800;line-height:1;margin:6px 0}
+  .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:12px}
+  .kpi .card{text-align:center}
+  footer{margin-top:60px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>曲线路线（曲线 → 毕业迁移）合约流程</h1>
+<p class="sub">更新 2026-09-03 · 这是"如果要做 pons v2 那套"的技术拆解，<b>不是</b>当前 9.16 上线方案 · 当前方案见 <code>09-合约作用与关系图.html</code></p>
+
+<div class="callout warn">
+  <h3>先说结论</h3>
+  <p>曲线路线有两种做法：<b>A. 曲线 → 我们自部署的 Uniswap V3</b>（测试网今天能测）；<b>B. 曲线 → Uniswap V4 + Hook</b>（= pons v2，要等 9.16 官方地址）。A 需要 <b>6 个自研合约</b>（2 新写、1 重写、3 沿用/小改），B 需要 <b>9–10 个</b>。两者都让<b>用户本金进入我们自己写的合约</b>，审计从"建议"变成"必须"。</p>
+</div>
+
+<div class="kpi">
+  <div class="card"><div class="sub">当前路线自研合约</div><div class="big ok">4</div><div class="sub">用户本金在 Uniswap 里</div></div>
+  <div class="card"><div class="sub">曲线 → V3（方案 A）</div><div class="big warn">6</div><div class="sub">本金在曲线里直到毕业</div></div>
+  <div class="card"><div class="sub">曲线 → V4 + Hook（方案 B）</div><div class="big no">9–10</div><div class="sub">本金在曲线里 + Hook 收费</div></div>
+</div>
+
+<!-- ====================================================== 流程图 -->
+<h2>1. 一个币的四个阶段</h2>
+<div class="diagram">
+<svg viewBox="0 0 1040 560" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,PingFang SC,Microsoft YaHei,sans-serif">
+  <defs>
+    <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#9ca3af"/></marker>
+    <marker id="mp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#a855f7"/></marker>
+    <marker id="mg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#22c55e"/></marker>
+    <marker id="mr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#ef4444"/></marker>
+  </defs>
+
+  <!-- phase headers -->
+  <g font-size="13" fill="#9ca3af">
+    <text x="20" y="30">阶段 ① 发射</text>
+    <text x="280" y="30">阶段 ② 曲线交易（摆摊）</text>
+    <text x="560" y="30">阶段 ③ 毕业迁移（搬家，同一笔交易）</text>
+    <text x="860" y="30">阶段 ④ 毕业后</text>
+  </g>
+  <line x1="260" y1="40" x2="260" y2="540" stroke="#1f2937" stroke-dasharray="4 4"/>
+  <line x1="540" y1="40" x2="540" y2="540" stroke="#1f2937" stroke-dasharray="4 4"/>
+  <line x1="840" y1="40" x2="840" y2="540" stroke="#1f2937" stroke-dasharray="4 4"/>
+
+  <!-- phase 1 -->
+  <rect x="20" y="60" width="220" height="70" rx="12" fill="#121826" stroke="#3b82f6" stroke-width="2"/>
+  <text x="130" y="86" text-anchor="middle" fill="#e5e7eb" font-size="14" font-weight="700">CurveFactory.launch()</text>
+  <text x="130" y="106" text-anchor="middle" fill="#9ca3af" font-size="12">部署 Token + Curve · 收创建费</text>
+  <text x="130" y="122" text-anchor="middle" fill="#9ca3af" font-size="12">10 亿全部铸给 Curve · 可选首购</text>
+
+  <rect x="20" y="170" width="220" height="56" rx="12" fill="#121826" stroke="#06b6d4"/>
+  <text x="130" y="194" text-anchor="middle" fill="#e5e7eb" font-size="14" font-weight="600">LaunchToken</text>
+  <text x="130" y="214" text-anchor="middle" fill="#9ca3af" font-size="12">固定 10 亿 · 无增发 · 元数据上链</text>
+
+  <path d="M130 130 V168" stroke="#9ca3af" stroke-width="2" fill="none" marker-end="url(#m)"/>
+  <path d="M240 95 H278" stroke="#9ca3af" stroke-width="2" fill="none" marker-end="url(#m)"/>
+
+  <!-- phase 2 -->
+  <rect x="280" y="60" width="240" height="120" rx="12" fill="#121826" stroke="#a855f7" stroke-width="2"/>
+  <text x="400" y="86" text-anchor="middle" fill="#e5e7eb" font-size="15" font-weight="700">BondingCurve（每币一个）</text>
+  <text x="400" y="106" text-anchor="middle" fill="#9ca3af" font-size="12">持有全部代币 + 收进来的 USDC</text>
+  <text x="400" y="122" text-anchor="middle" fill="#9ca3af" font-size="12">buy() / sell() 按 x·y=k 定价</text>
+  <text x="400" y="138" text-anchor="middle" fill="#9ca3af" font-size="12">前 5 秒递减狙击税 · 1% 手续费</text>
+  <text x="400" y="154" text-anchor="middle" fill="#9ca3af" font-size="12">没有 addLiquidity，谁也加不了</text>
+  <text x="400" y="170" text-anchor="middle" fill="#fca5a5" font-size="12">★ 用户本金在这里</text>
+
+  <rect x="300" y="220" width="200" height="50" rx="12" fill="#121826" stroke="#3b82f6"/>
+  <text x="400" y="241" text-anchor="middle" fill="#e5e7eb" font-size="13" font-weight="600">买家 / 卖家</text>
+  <text x="400" y="259" text-anchor="middle" fill="#9ca3af" font-size="12">只能在我们网站交易</text>
+  <path d="M400 218 V182" stroke="#a855f7" stroke-width="2" fill="none" marker-end="url(#mp)" marker-start="url(#mp)"/>
+
+  <rect x="300" y="300" width="200" height="50" rx="12" fill="#121826" stroke="#22c55e"/>
+  <text x="400" y="321" text-anchor="middle" fill="#e5e7eb" font-size="13" font-weight="600">手续费（USDC）</text>
+  <text x="400" y="339" text-anchor="middle" fill="#9ca3af" font-size="12">每笔直推 75% 创作者 / 25% 国库</text>
+  <path d="M330 180 C330 230 330 260 330 298" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#mg)"/>
+
+  <rect x="300" y="390" width="200" height="60" rx="12" fill="#121826" stroke="#f59e0b"/>
+  <text x="400" y="413" text-anchor="middle" fill="#e5e7eb" font-size="13" font-weight="600">进度条</text>
+  <text x="400" y="431" text-anchor="middle" fill="#9ca3af" font-size="12">realQuote / 10,000 USDC</text>
+  <text x="400" y="445" text-anchor="middle" fill="#9ca3af" font-size="11">到 100% 时最后那笔买单触发 ③</text>
+
+  <path d="M520 120 H558" stroke="#ef4444" stroke-width="2" fill="none" marker-end="url(#mr)"/>
+  <text x="539" y="110" text-anchor="middle" fill="#fca5a5" font-size="11">达标</text>
+
+  <!-- phase 3 -->
+  <rect x="560" y="60" width="260" height="70" rx="12" fill="#121826" stroke="#ef4444" stroke-width="2"/>
+  <text x="690" y="84" text-anchor="middle" fill="#e5e7eb" font-size="14" font-weight="700">Curve.sweepForGraduation()</text>
+  <text x="690" y="104" text-anchor="middle" fill="#9ca3af" font-size="12">曲线关门 · 10,000 USDC + 预留代币</text>
+  <text x="690" y="120" text-anchor="middle" fill="#9ca3af" font-size="12">一次性倒给 Executor</text>
+
+  <rect x="560" y="170" width="260" height="110" rx="12" fill="#121826" stroke="#ef4444" stroke-width="2"/>
+  <text x="690" y="194" text-anchor="middle" fill="#e5e7eb" font-size="14" font-weight="700">GraduationExecutor</text>
+  <text x="690" y="214" text-anchor="middle" fill="#9ca3af" font-size="12">1. 按曲线收盘价建 V3 池并初始化</text>
+  <text x="690" y="230" text-anchor="middle" fill="#9ca3af" font-size="12">2. USDC + 代币按比例 mint 全范围仓位</text>
+  <text x="690" y="246" text-anchor="middle" fill="#9ca3af" font-size="12">3. 多出的代币 → Locker 永久锁</text>
+  <text x="690" y="262" text-anchor="middle" fill="#9ca3af" font-size="12">4. LP NFT → FeeLocker.register()</text>
+  <path d="M690 130 V168" stroke="#ef4444" stroke-width="2" fill="none" marker-end="url(#mr)"/>
+
+  <rect x="560" y="320" width="260" height="70" rx="12" fill="#1a0f0f" stroke="#7f1d1d"/>
+  <text x="690" y="344" text-anchor="middle" fill="#fca5a5" font-size="13" font-weight="600">风险点</text>
+  <text x="690" y="362" text-anchor="middle" fill="#9ca3af" font-size="11">gas 不够 → 卡在 Swept 中间态，等人补一笔</text>
+  <text x="690" y="378" text-anchor="middle" fill="#9ca3af" font-size="11">新池开门下一区块 → 机器人抢跑</text>
+
+  <rect x="560" y="420" width="260" height="60" rx="12" fill="#121826" stroke="#9ca3af" stroke-dasharray="4 4"/>
+  <text x="690" y="443" text-anchor="middle" fill="#e5e7eb" font-size="13" font-weight="600">GraduationGuard（可选）</text>
+  <text x="690" y="461" text-anchor="middle" fill="#9ca3af" font-size="11">建池前预检，防止"钱倒出来了却建不了池"</text>
+
+  <path d="M820 225 H858" stroke="#9ca3af" stroke-width="2" fill="none" marker-end="url(#m)"/>
+
+  <!-- phase 4 -->
+  <rect x="860" y="60" width="160" height="66" rx="12" fill="#121826" stroke="#a855f7" stroke-width="2"/>
+  <text x="940" y="86" text-anchor="middle" fill="#e5e7eb" font-size="14" font-weight="700">Uniswap V3 池</text>
+  <text x="940" y="106" text-anchor="middle" fill="#9ca3af" font-size="12">全链公开交易</text>
+
+  <rect x="860" y="190" width="160" height="66" rx="12" fill="#121826" stroke="#22c55e" stroke-width="2"/>
+  <text x="940" y="216" text-anchor="middle" fill="#e5e7eb" font-size="14" font-weight="700">FeeLocker</text>
+  <text x="940" y="236" text-anchor="middle" fill="#9ca3af" font-size="12">同现在：锁地契 · 75/25</text>
+
+  <rect x="860" y="300" width="160" height="56" rx="12" fill="#121826" stroke="#f59e0b"/>
+  <text x="940" y="324" text-anchor="middle" fill="#e5e7eb" font-size="14" font-weight="600">Treasury</text>
+  <text x="940" y="344" text-anchor="middle" fill="#9ca3af" font-size="12">同现在：82/18 回购销毁</text>
+
+  <path d="M940 126 V188" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#mg)"/>
+  <text x="975" y="160" fill="#86efac" font-size="11">手续费</text>
+  <path d="M940 256 V298" stroke="#f59e0b" stroke-width="2" fill="none" marker-end="url(#m)"/>
+
+  <text x="20" y="530" fill="#6b7280" font-size="12">阶段 ②→③ 在同一笔交易里完成，中间没有空隙；"抢"发生在 ③ 完成后的下一个区块。阶段 ④ 与当前路线完全一样。</text>
+</svg>
+</div>
+
+<!-- ====================================================== 合约清单 -->
+<h2>2. 方案 A：曲线 → 我们自部署的 V3，需要哪些合约</h2>
+<p class="sub">今天就能在 Arc 测试网测。相对现在的 4 个合约：<span class="no">2 个新写</span>、<span class="warn">1 个重写</span>、<span class="ok">3 个沿用或小改</span>。</p>
+<div class="grid">
+
+  <div class="card">
+    <span class="tag rw">重写</span><span class="tag">1 个</span>
+    <h3>CurveFactory（原 LaunchFactory 重写）</h3>
+    <p class="role">发币入口：部署 Token 和它专属的 Curve、把 10 亿全部铸给 Curve、收创建费、可选首购、登记参数。毕业时接 Curve 的通知，调 Executor 建池；建池失败可被任何人重试。管理运营参数（开盘市值、毕业阈值、税率曲线）。</p>
+    <div class="ana">招商处，但现在不再直接开店，而是给每个商户发一个<b>预售摊位</b>。摊位卖够钱了，招商处负责把它搬进商场。</div>
+    <div class="meta">改动：<b>现有 launch() 的建池、放币、锁 LP 逻辑全部挪到 Executor，这里只剩部署 + 登记 + 毕业调度。</b></div>
+  </div>
+
+  <div class="card">
+    <span class="tag new">新写</span><span class="tag">每币一个</span>
+    <h3>BondingCurve</h3>
+    <p class="role">摆摊本体。持有该币的全部代币和买家投进来的 USDC。<code>buy(usdcIn)</code> / <code>sell(tokenIn)</code> 按恒定乘积定价，虚拟储备 phantomQuote 决定统一开盘价。每笔收 1% 手续费（只收 USDC 那一边），直推 75% 创作者 / 25% 国库。前 5 秒递减狙击税。达到阈值的那笔买单：截断多余部分退款、标记毕业、通知 Factory、尝试当场建池。<code>sweepForGraduation()</code> 只能被 Factory 调一次。<b>没有 addLiquidity / removeLiquidity。</b></p>
+    <div class="ana">楼盘预售处。只有开发商一个窗口，价目表公示，卖得越多越贵；可以退房，不能开二手中介。卖够指标那一秒关窗，预售款全部转成公共产权。</div>
+    <div class="meta">规模：<b>约 350–450 行</b>，是整条路线的核心和最大审计对象。<span class="no">用户本金全程在这里。</span></div>
+  </div>
+
+  <div class="card">
+    <span class="tag new">新写</span><span class="tag">1 个</span>
+    <h3>GraduationExecutor</h3>
+    <p class="role">搬家工。从 Curve 接过 10,000 USDC 和预留代币，按曲线收盘价在我们的 V3 上建池、初始化价格、mint 一个全范围双边仓位（USDC 与代币按当前价配比），多出来的代币交给 Locker 永久锁（Arc 禁止 burn 到零地址），LP NFT 交给 FeeLocker 登记。要处理 tick 对齐、6 位 / 18 位精度、代币地址排序两种情况。</p>
+    <div class="ana">搬家公司 + 装修队。把预售处的钱和剩下的房子一次性搬进商场，按收盘价挂牌，地契送去保险箱。</div>
+    <div class="meta">规模：<b>约 200 行</b>。难点是<b>价格连续</b>：收盘价 = 开盘价，不能跳。可复用现有 <code>PriceMath</code>。</div>
+  </div>
+
+  <div class="card">
+    <span class="tag keep">小改</span>
+    <h3>LaunchToken</h3>
+    <p class="role">基本不变。可以删掉现在的 20 区块窗口限购（防狙移到 Curve 的递减税里），变成纯 ERC20 + 链上元数据。</p>
+    <div class="ana">统一店面，装修图纸一样，只是不再自带"开业限购牌"，那块牌子挂到预售处去了。</div>
+    <div class="meta">改动：<b>删 10 行。</b>可选：毕业前禁止转账到非 Curve 地址，防止有人拿币另开池子（pons 没做，建议也不做）。</div>
+  </div>
+
+  <div class="card">
+    <span class="tag keep">小改</span>
+    <h3>FeeLocker</h3>
+    <p class="role">毕业后的地契保险箱 + 分账柜台，和现在一样。唯一改动：<code>register()</code> 允许 Executor 调用（现在只允许 Factory），并多存"锁住的多余代币"。</p>
+    <div class="ana">同一个保险箱，多放一格给搬家时多出来的房子。</div>
+    <div class="meta">改动：<b>约 20 行。</b></div>
+  </div>
+
+  <div class="card">
+    <span class="tag keep">不变</span>
+    <h3>Treasury</h3>
+    <p class="role">完全不变。曲线阶段的 25% 和毕业后的 25% 都进这里，82/18 回购销毁照旧。</p>
+    <div class="ana">商场公账，收钱的口子多了一个，规矩没变。</div>
+    <div class="meta">改动：<b>0。</b></div>
+  </div>
+</div>
+
+<div class="callout" style="margin-top:20px">
+  <h3>方案 A 合计</h3>
+  <p><b>自研 6 个</b>：CurveFactory、BondingCurve、GraduationExecutor、LaunchToken、FeeLocker、Treasury。<b>Uniswap V3 那 4 个</b>沿用已部署的。链下 Keeper 少一项活（曲线阶段手续费每笔直推，不需要 collect），多一项活（监控卡在 Swept 的币并补建池）。</p>
+</div>
+
+<!-- ====================================================== 方案 B -->
+<h2>3. 方案 B：曲线 → Uniswap V4 + Hook（= pons v2），多出什么</h2>
+<p class="sub">要等 9.16 Arc 主网官方 V4 地址（PoolManager、PositionManager、Permit2、Quoter）。在方案 A 的基础上再加：</p>
+<table>
+  <tr><th style="width:24%">合约</th><th>作用</th><th style="width:18%">为什么 V3 不需要</th></tr>
+  <tr><td><span class="tag v4">新写</span> <b>LaunchHook</b></td><td>挂在 V4 池上的钩子。池费设 0，每笔 swap 由 Hook 从 USDC 那一边抽 1%，当场分给创作者和国库，不再需要 Keeper collect。可在 Hook 里做毕业后的防狙。地址必须"挖"出来（V4 要求 Hook 地址的特定 bit 表示权限）。</td><td>V3 没有钩子，手续费只能攒着 collect</td></tr>
+  <tr><td><span class="tag v4">新写</span> <b>V4 Locker</b></td><td>V4 的仓位不是 ERC721 而是 PositionManager 里的记录，锁法不同，要单独写。</td><td>V3 用现有 FeeLocker 直接锁 NFT</td></tr>
+  <tr><td><span class="tag v4">新写</span> <b>GraduationGuard</b></td><td>V4 建池比 V3 多很多拒绝条件（Hook 校验、tickSpacing、Permit2 授权），pons 专门写一个无状态预检合约，确保曲线钱倒出来之前池子一定能建。</td><td>V3 建池条件简单，Executor 内部检查即可</td></tr>
+  <tr><td><span class="tag v4">新写</span> <b>FeeEscrow</b>（可选）</td><td>pons 把曲线阶段和 Hook 阶段的手续费统一进一个托管合约再结算给创作者。我们用 FeeLocker 的 claimable 模式可以替代。</td><td>可选</td></tr>
+  <tr><td><b>Executor 重写</b></td><td>建池走 PoolManager.initialize + PositionManager.mint + Permit2 授权那一套，和 V3 完全不同。</td><td>—</td></tr>
+</table>
+<div class="callout red" style="margin-top:16px">
+  <h3>方案 B 合计</h3>
+  <p><b>自研 9–10 个</b>，全部要审计，其中 Hook 是 2025 年出过多起漏洞事件的新攻击面。<b>Arc 主网前无法在测试网跑通</b>——测试网没有 V4；理论上 BUSL 允许我们非生产用途自部署 V4 预演，但主网对接官方地址时 Hook 地址要重新挖、部署脚本要重做，等于做两遍。</p>
+</div>
+
+<!-- ====================================================== 数学 -->
+<h2>4. 曲线的账怎么算（一个例子）</h2>
+<p class="sub">让老板和客户看得懂"开盘价、毕业时池子里有多少钱、多出来的代币去哪了"。</p>
+<table>
+  <tr><th style="width:30%">参数</th><th>值</th><th>说明</th></tr>
+  <tr><td>总供应 S</td><td>1,000,000,000</td><td>全部铸给曲线</td></tr>
+  <tr><td>虚拟储备 phantomQuote</td><td>5,000 USDC</td><td>决定统一开盘市值 = 5,000 USDC，这笔钱<b>不是真的</b>，只是公式里的常数</td></tr>
+  <tr><td>毕业阈值</td><td>10,000 USDC</td><td>买家真金白银投进来的钱达到这个数就毕业</td></tr>
+  <tr><td>k = phantomQuote × S</td><td>5,000 × 10⁹</td><td>恒定乘积</td></tr>
+  <tr><td>预留代币 = S × phantom / (phantom + 阈值)</td><td>333,333,333</td><td>毕业时留给池子的那份，刚好使"曲线卖完 = 钱攒够"同一时刻发生</td></tr>
+  <tr><td>曲线阶段卖出</td><td>666,666,667 枚，换回 10,000 USDC</td><td>这些是买家手里的币</td></tr>
+  <tr><td>收盘价 = 开盘价（新池）</td><td>(5,000 + 10,000) / 333,333,333 = 0.000045 USDC</td><td>毕业市值 45,000 USDC，是开盘的 9 倍</td></tr>
+  <tr><td>新池实际能配对的代币</td><td>10,000 / 0.000045 ≈ 222,222,222</td><td>全范围仓位两边价值必须相等：10,000 USDC 对 10,000 USDC 的币</td></tr>
+  <tr><td><b>多出来的代币</b></td><td><b>≈ 111,111,111（11.1%）</b></td><td>因为虚拟储备那 5,000 不是真钱。pons 的做法是<b>连同仓位一起永久锁进 Locker</b>；也可以转 <code>0x…dEaD</code> 等效销毁。这 11% 是曲线模式的"隐藏成本"，要在文档里讲清楚</td></tr>
+</table>
+
+<!-- ====================================================== 对比 -->
+<h2>5. 和当前路线的硬对比</h2>
+<table>
+  <tr><th style="width:22%"></th><th>当前（直接进 V3）</th><th>方案 A（曲线 → V3）</th><th>方案 B（曲线 → V4 Hook）</th></tr>
+  <tr><td>自研合约数</td><td class="ok">4</td><td class="warn">6</td><td class="no">9–10</td></tr>
+  <tr><td>新增代码量（估）</td><td>—</td><td class="warn">约 700 行 + 重写测试</td><td class="no">约 1,500 行 + 重写测试</td></tr>
+  <tr><td>用户本金在哪</td><td class="ok">Uniswap 官方合约</td><td class="no">我们的曲线合约（毕业前）</td><td class="no">我们的曲线合约（毕业前）+ Hook 经手每笔</td></tr>
+  <tr><td>不审计能不能上</td><td class="warn">不该，但钱不在我们手里</td><td class="no">不能</td><td class="no">不能</td></tr>
+  <tr><td>审计范围 / 费用</td><td class="ok">小，约 600 行</td><td class="warn">中，约 1,300 行</td><td class="no">大，约 2,000 行含 Hook</td></tr>
+  <tr><td>测试网今天能测</td><td class="ok">能，已测完</td><td class="ok">能</td><td class="no">不能，等 9.16</td></tr>
+  <tr><td>开发 + 测试（估）</td><td class="ok">已完成</td><td class="warn">2–3 周</td><td class="no">4–6 周</td></tr>
+  <tr><td>9.16 能不能上</td><td class="ok">能</td><td class="no">赶不上审计</td><td class="no">不能</td></tr>
+  <tr><td>毕业前能在哪买</td><td class="ok">全链任何地方</td><td class="warn">只有我们网站</td><td class="warn">只有我们网站</td></tr>
+  <tr><td>毕业"上市时刻"</td><td class="warn">只有标签，用运营补</td><td class="ok">真实事件</td><td class="ok">真实事件</td></tr>
+  <tr><td>搬家风险（中间态、开池被狙）</td><td class="ok">无</td><td class="warn">有</td><td class="warn">有</td></tr>
+  <tr><td>11% 代币被锁 / 销毁</td><td class="ok">无</td><td class="warn">有</td><td class="warn">有</td></tr>
+  <tr><td>创作者只收 USDC</td><td class="warn">两边都收，可 40 行改</td><td class="ok">曲线阶段是；毕业后同当前</td><td class="ok">全程是</td></tr>
+  <tr><td>Keeper 依赖</td><td>分费靠 Keeper</td><td>毕业前不靠，毕业后靠</td><td class="ok">不靠</td></tr>
+</table>
+
+<!-- ====================================================== 什么时候做 -->
+<h2>6. 什么情况下值得做</h2>
+<div class="two">
+  <div class="callout">
+    <h3>做方案 A 的前提</h3>
+    <div class="steps" style="margin-top:8px">
+      <div class="step"><div>老板明确要"毕业迁移"作为产品叙事，而不只是要"公平发射"（后者现在已经有）</div></div>
+      <div class="step"><div>审计预算到位（曲线是本金主路径，必须审完再上）</div></div>
+      <div class="step"><div>接受 9.16 首发用当前路线，曲线作为二期新 Factory 上线，老币不动</div></div>
+    </div>
+  </div>
+  <div class="callout warn">
+    <h3>做方案 B 的前提</h3>
+    <div class="steps" style="margin-top:8px">
+      <div class="step"><div>方案 A 的全部前提</div></div>
+      <div class="step"><div>9.16 后官方 V4 地址已公布且稳定运行一段时间</div></div>
+      <div class="step"><div>有能写和审 V4 Hook 的人，这是 2025 年最新的攻击面</div></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  参考：pons v2 公开合约结构（GitHub ponsdotdev/ponsfamily contracts/v2）· 我们现有合约 <code>contracts/src/</code> · 本文行数与工期为估算，用于决策，不是承诺
+</footer>
+</div>
+</body>
+</html>

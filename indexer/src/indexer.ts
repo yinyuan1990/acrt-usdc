@@ -8,6 +8,8 @@ import { bus } from "./bus.js";
 
 type TokenRow = { address: string; pool: string; is_token0: boolean; deployer: string; payout: string };
 
+const TRANSFER_EVENT = tokenAbi.find((x) => x.type === "event" && x.name === "Transfer")!;
+
 const tokens = new Map<string, TokenRow>(); // lowercase address → row
 const poolToToken = new Map<string, string>(); // lowercase pool → token
 const blockTs = new Map<bigint, Date>();
@@ -38,7 +40,7 @@ async function onTokenLaunched(log: Log, args: {
 }) {
   const token = getAddress(args.token);
   if (tokens.has(token.toLowerCase())) return;
-  const [name, symbol, logo, description, socials] = await client.multicall({
+  const [name, symbol, logo, description, socials, lock, tax] = await client.multicall({
     allowFailure: false,
     contracts: [
       { address: token, abi: tokenAbi, functionName: "name" },
@@ -46,15 +48,23 @@ async function onTokenLaunched(log: Log, args: {
       { address: token, abi: tokenAbi, functionName: "logo" },
       { address: token, abi: tokenAbi, functionName: "description" },
       { address: token, abi: tokenAbi, functionName: "socials" },
+      // the creator may pick a separate fee wallet at launch; the locker is the source of truth for payout
+      { address: ADDR.locker, abi: lockerAbi, functionName: "locks", args: [token] },
+      // tax mode: immutable on the token
+      { address: token, abi: tokenAbi, functionName: "taxConfig" },
     ],
   });
+  const [buyTax, sellTax, taxMarketing, taxTeam, taxMarketingBps] = tax;
   const ts = await tsOf(log.blockNumber!);
-  const row: TokenRow = { address: token, pool: getAddress(args.pool), is_token0: args.isToken0, deployer: getAddress(args.deployer), payout: getAddress(args.deployer) };
-  await sql`insert into tokens (address, name, symbol, logo, description, website, twitter, telegram, deployer, payout, pool, position_id,
-      is_token0, launch_block, launch_ts, launch_tx, restrictions_end_block, graduation_threshold, initial_buy_usdc, creation_fee_paid)
-    values (${token}, ${name}, ${symbol}, ${logo}, ${description}, ${socials[0]}, ${socials[1]}, ${socials[2]}, ${row.deployer}, ${row.payout},
+  const payout = lock[5] !== "0x0000000000000000000000000000000000000000" ? getAddress(lock[5]) : getAddress(args.deployer);
+  const row: TokenRow = { address: token, pool: getAddress(args.pool), is_token0: args.isToken0, deployer: getAddress(args.deployer), payout };
+  await sql`insert into tokens (address, name, symbol, logo, description, website, twitter, telegram, discord, farcaster, deployer, payout, pool, position_id,
+      is_token0, launch_block, launch_ts, launch_tx, restrictions_end_block, graduation_threshold, initial_buy_usdc, creation_fee_paid,
+      buy_tax_bps, sell_tax_bps, tax_marketing_wallet, tax_team_wallet, tax_marketing_bps)
+    values (${token}, ${name}, ${symbol}, ${logo}, ${description}, ${socials[0]}, ${socials[1]}, ${socials[2]}, ${socials[3]}, ${socials[4]}, ${row.deployer}, ${row.payout},
       ${row.pool}, ${args.positionId.toString()}, ${args.isToken0}, ${Number(log.blockNumber)}, ${ts}, ${log.transactionHash!},
-      ${Number(args.restrictionsEndBlock)}, ${args.graduationThreshold.toString()}, ${args.initialBuyUsdc.toString()}, ${args.creationFeePaid.toString()})
+      ${Number(args.restrictionsEndBlock)}, ${args.graduationThreshold.toString()}, ${args.initialBuyUsdc.toString()}, ${args.creationFeePaid.toString()},
+      ${Number(buyTax)}, ${Number(sellTax)}, ${buyTax > 0 || sellTax > 0 ? getAddress(taxMarketing) : ""}, ${buyTax > 0 || sellTax > 0 ? getAddress(taxTeam) : ""}, ${Number(taxMarketingBps)})
     on conflict (address) do nothing`;
   tokens.set(token.toLowerCase(), row);
   poolToToken.set(row.pool.toLowerCase(), token);
@@ -111,20 +121,42 @@ async function onTransfer(log: Log, args: { from: Address; to: Address; value: b
   }
 }
 
-async function onFees(log: Log, args: { token: Address; quoteToCreator: bigint; quoteToProtocol: bigint; tokenToCreator: bigint; tokenToProtocol: bigint; creatorPaid: boolean }) {
+async function onFees(log: Log, args: { token: Address; quoteToCreator: bigint; quoteToProtocol: bigint; tokenConverted: bigint; usdcFromToken: bigint; creatorPaid: boolean }) {
   const token = getAddress(args.token);
   const t = tokens.get(token.toLowerCase());
   const ts = await tsOf(log.blockNumber!);
-  const ins = await sql`insert into fee_events (token, tx_hash, log_index, block_number, ts, quote_creator, quote_protocol, token_creator, token_protocol, creator_paid, payout)
+  // quote_* already include the USDC obtained by selling the token-side fees (payouts are USDC-only)
+  const ins = await sql`insert into fee_events (token, tx_hash, log_index, block_number, ts, quote_creator, quote_protocol, token_converted, usdc_from_token, creator_paid, payout)
     values (${token}, ${log.transactionHash!}, ${log.logIndex!}, ${Number(log.blockNumber)}, ${ts}, ${args.quoteToCreator.toString()}, ${args.quoteToProtocol.toString()},
-      ${args.tokenToCreator.toString()}, ${args.tokenToProtocol.toString()}, ${args.creatorPaid}, ${t?.payout ?? ""})
-    on conflict (tx_hash, log_index) do nothing returning id`;
+      ${args.tokenConverted.toString()}, ${args.usdcFromToken.toString()}, ${args.creatorPaid}, ${t?.payout ?? ""})
+    on conflict (tx_hash, log_index, kind) do nothing returning id`;
   if (ins.length === 0) return;
   const total = args.quoteToCreator + args.quoteToProtocol;
   await sql`update tokens set fees_usdc_total = fees_usdc_total + ${total.toString()},
       fees_creator_usdc_total = fees_creator_usdc_total + ${args.quoteToCreator.toString()},
       last_distributed_at = ${ts}, volume_since_distribute = 0, updated_at = now() where address = ${token}`;
   bus.emit("ws", { type: "fees", data: { token, quoteToCreator: args.quoteToCreator.toString(), quoteToProtocol: args.quoteToProtocol.toString(), creatorPaid: args.creatorPaid, ts } });
+}
+
+/** Tax proceeds paid inside the same distribute() call to the token's two tax wallets → one payout row each. */
+async function onTaxDistributed(log: Log, args: {
+  token: Address; tokenConverted: bigint; marketingWallet: Address; usdcToMarketing: bigint; teamWallet: Address; usdcToTeam: bigint; allPaid: boolean;
+}) {
+  const token = getAddress(args.token);
+  const ts = await tsOf(log.blockNumber!);
+  const rows: [string, Address, bigint][] = [["tax_marketing", args.marketingWallet, args.usdcToMarketing], ["tax_team", args.teamWallet, args.usdcToTeam]];
+  let inserted = 0n;
+  for (const [kind, wallet, amt] of rows) {
+    if (amt === 0n) continue;
+    const ins = await sql`insert into fee_events (token, tx_hash, log_index, block_number, ts, quote_creator, quote_protocol, token_converted, usdc_from_token, creator_paid, payout, kind)
+      values (${token}, ${log.transactionHash!}, ${log.logIndex!}, ${Number(log.blockNumber)}, ${ts}, ${amt.toString()}, 0,
+        ${args.tokenConverted.toString()}, ${amt.toString()}, ${args.allPaid}, ${getAddress(wallet)}, ${kind})
+      on conflict (tx_hash, log_index, kind) do nothing returning id`;
+    if (ins.length) inserted += amt;
+  }
+  if (inserted === 0n) return;
+  await sql`update tokens set tax_usdc_total = tax_usdc_total + ${inserted.toString()}, updated_at = now() where address = ${token}`;
+  bus.emit("ws", { type: "fees", data: { token, kind: "tax", quoteToCreator: inserted.toString(), quoteToProtocol: "0", creatorPaid: args.allPaid, ts } });
 }
 
 async function onGraduated(log: Log, args: { token: Address; pairedUsdc: bigint; threshold: bigint }) {
@@ -142,14 +174,17 @@ async function onPayoutChanged(args: { token: Address; newPayout: Address }) {
   if (t) t.payout = getAddress(args.newPayout);
 }
 
-async function onExecuted(log: Log, args: { usdcSpent: bigint; tokensBurned: bigint; usdcToEco: bigint }) {
+/** Weekly treasury settlement (eco transfer + first buyback slice) and standalone buyback slices (`BoughtBack`,
+ *  usdcToEco = 0). Both land in `burns`. */
+async function onExecuted(log: Log, args: { usdcToEco?: bigint; usdcSpent: bigint; tokensBurned: bigint; reserveLeft: bigint }) {
   const ts = await tsOf(log.blockNumber!);
+  const toEco = args.usdcToEco ?? 0n;
   const ins = await sql`insert into burns (tx_hash, block_number, ts, usdc_spent, tokens_burned, usdc_to_eco)
-    values (${log.transactionHash!}, ${Number(log.blockNumber)}, ${ts}, ${args.usdcSpent.toString()}, ${args.tokensBurned.toString()}, ${args.usdcToEco.toString()})
+    values (${log.transactionHash!}, ${Number(log.blockNumber)}, ${ts}, ${args.usdcSpent.toString()}, ${args.tokensBurned.toString()}, ${toEco.toString()})
     on conflict (tx_hash) do nothing returning id`;
   if (ins.length === 0) return;
-  bus.emit("ws", { type: "burn", data: { tx: log.transactionHash, usdcSpent: args.usdcSpent.toString(), tokensBurned: args.tokensBurned.toString(), ts } });
-  console.log(`[burn] spent ${args.usdcSpent} usdc → burned ${args.tokensBurned}`);
+  bus.emit("ws", { type: "burn", data: { tx: log.transactionHash, usdcSpent: args.usdcSpent.toString(), tokensBurned: args.tokensBurned.toString(), usdcToEco: toEco.toString(), ts } });
+  console.log(`[treasury] eco ${toEco} · spent ${args.usdcSpent} usdc → burned ${args.tokensBurned} · reserve ${args.reserveLeft}`);
 }
 
 async function onClaimed(log: Log, args: { account: Address; asset: Address; amount: bigint }) {
@@ -175,8 +210,8 @@ async function processRange(from: bigint, to: bigint) {
   //    volume_since_distribute are reset/accumulated exactly as they happened onchain.
   const all: Typed[] = [];
   for (const l of fLogs) if (l.eventName === "Graduated") all.push({ log: l, kind: "graduated", args: l.args });
-  for (const l of tLogs) if (l.eventName === "Executed") all.push({ log: l, kind: "executed", args: l.args });
-  for (const l of lLogs) if (l.eventName === "FeesDistributed" || l.eventName === "PayoutChanged" || l.eventName === "Claimed") all.push({ log: l, kind: l.eventName, args: l.args });
+  for (const l of tLogs) if (l.eventName === "Executed" || l.eventName === "BoughtBack") all.push({ log: l, kind: "executed", args: l.args });
+  for (const l of lLogs) if (l.eventName === "FeesDistributed" || l.eventName === "TaxDistributed" || l.eventName === "PayoutChanged" || l.eventName === "Claimed") all.push({ log: l, kind: l.eventName, args: l.args });
 
   const pools = [...poolToToken.keys()] as Address[];
   const toks = [...tokens.keys()] as Address[];
@@ -185,7 +220,7 @@ async function processRange(from: bigint, to: bigint) {
     for (const l of swapLogs) all.push({ log: l, kind: "swap", args: l.args });
   }
   if (toks.length) {
-    const xfer = await client.getLogs({ address: toks, event: tokenAbi[5], fromBlock: from, toBlock: to });
+    const xfer = await client.getLogs({ address: toks, event: TRANSFER_EVENT, fromBlock: from, toBlock: to });
     for (const l of xfer) all.push({ log: l, kind: "transfer", args: l.args });
   }
   all.sort((a, b) => (a.log.blockNumber === b.log.blockNumber ? Number(a.log.logIndex! - b.log.logIndex!) : Number(a.log.blockNumber! - b.log.blockNumber!)));
@@ -195,6 +230,7 @@ async function processRange(from: bigint, to: bigint) {
       case "swap": await onSwap(log, args as never); break;
       case "transfer": await onTransfer(log, args as never); break;
       case "FeesDistributed": await onFees(log, args as never); break;
+      case "TaxDistributed": await onTaxDistributed(log, args as never); break;
       case "graduated": await onGraduated(log, args as never); break;
       case "executed": await onExecuted(log, args as never); break;
       case "PayoutChanged": await onPayoutChanged(args as never); break;

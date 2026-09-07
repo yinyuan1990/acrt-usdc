@@ -14,15 +14,15 @@ contract LaunchTest is Base {
     // ------------------------------------------------------------ launch
 
     function test_launch_createsPoolLocksLpAndChargesFee() public {
-        uint256 treasuryBefore = usdc.balanceOf(address(treasury));
-        (address token, address pool) = doLaunch(creator, "AAA", 5_000e6, 0);
+        uint256 ecoBefore = usdc.balanceOf(eco);
+        (address token, address pool) = doLaunch(creator, "AAA", 0);
 
         LaunchToken t = LaunchToken(token);
         assertEq(t.totalSupply(), SUPPLY);
         assertEq(t.liquidityPool(), pool);
         assertEq(uni.getPool(token, address(usdc), 10_000), pool);
 
-        (uint256 tokenId,,,,,, bool exists) = locker.locks(token);
+        (uint256 tokenId,,,,,,, bool exists) = locker.locks(token);
         assertTrue(exists);
         assertEq(nfpm.ownerOf(tokenId), address(locker));
 
@@ -33,55 +33,88 @@ contract LaunchTest is Base {
         assertLt(dust, 1e18, "dust should be negligible");
         assertEq(t.balanceOf(address(factory)), 0);
 
-        // 2 USDC creation fee reached the treasury
-        assertEq(usdc.balanceOf(address(treasury)) - treasuryBefore, 2e6);
+        // 1 USDC creation fee went straight to the ecosystem multisig
+        assertEq(usdc.balanceOf(eco) - ecoBefore, 1e6);
 
-        // spot mcap ≈ requested start mcap (within 1 tick ≈ 0.01% + spacing 2%)
-        uint256 mcap = spotMcap(token, pool);
-        assertApproxEqRel(mcap, 5_000e6, 0.03e18);
+        // spot mcap ≈ platform opening mcap (within 1 tick ≈ 0.01% + spacing 2%)
+        assertApproxEqRel(spotMcap(token, pool), factory.startMcapUsdc(), 0.03e18);
+    }
+
+    function test_launch_creationFeeRecipientIsImmutable() public {
+        assertEq(factory.feeRecipient(), eco, "fixed at deployment to the multisig");
+        uint256 t0 = usdc.balanceOf(address(treasury));
+        doLaunch(creator, "FEE", 0);
+        assertEq(usdc.balanceOf(eco), 1e6, "fee straight to the multisig");
+        assertEq(usdc.balanceOf(address(treasury)), t0, "treasury untouched");
+        vm.expectRevert(LaunchFactory.ZeroAddress.selector);
+        new LaunchFactory(
+            address(uni), address(nfpm), address(router), address(usdc), address(locker), address(treasury), address(0), owner
+        );
     }
 
     function test_launch_feeWaivedAndDisabled() public {
         vm.prank(owner);
         factory.setFeeWaived(creator, true);
-        uint256 before = usdc.balanceOf(address(treasury));
-        doLaunch(creator, "BBB", 5_000e6, 0);
-        assertEq(usdc.balanceOf(address(treasury)), before);
+        uint256 before = usdc.balanceOf(eco);
+        doLaunch(creator, "BBB", 0);
+        assertEq(usdc.balanceOf(eco), before);
 
         vm.prank(owner);
         factory.setFeeWaived(creator, false);
         vm.prank(owner);
         factory.setCreationFee(2e6, false);
-        doLaunch(creator, "CCC", 5_000e6, 0);
-        assertEq(usdc.balanceOf(address(treasury)), before);
+        doLaunch(creator, "CCC", 0);
+        assertEq(usdc.balanceOf(eco), before);
     }
 
     function test_launch_initialBuyGoesToCreator() public {
-        (address token,) = doLaunch(creator, "DDD", 5_000e6, 100e6);
+        (address token,) = doLaunch(creator, "DDD", 100e6);
         uint256 bal = LaunchToken(token).balanceOf(creator);
         assertGt(bal, 0);
         // 100 USDC into a $5k mcap pool: roughly 2% of supply, under the 5.5% cap
         assertLt(bal, (SUPPLY * 550) / 10_000);
     }
 
-    function test_launch_startPriceOutOfRangeReverts() public {
-        LaunchFactory.LaunchParams memory p = launchParams("EEE", 5_000e6, 0);
-        bool isToken0 = nextTokenAddress() < address(usdc);
-        p.sqrtPriceX96 = PriceMath.sqrtPriceX96ForMcap(100e6, isToken0); // $100 mcap: too low
-        vm.prank(creator);
-        vm.expectRevert();
-        factory.launch(p);
+    /// @dev Fair launch: the creator has no price input; every token opens at the same market cap.
+    function test_launch_everyTokenOpensAtSameMcap() public {
+        uint256 target = factory.startMcapUsdc();
+        assertEq(target, 5_000e6);
+        for (uint256 i; i < 6; ++i) {
+            (address token, address pool) = doLaunch(creator, string.concat("S", vm.toString(i)), 0);
+            assertApproxEqRel(spotMcap(token, pool), target, 0.03e18);
+        }
     }
 
-    /// @dev Token addresses come from the factory nonce, so orientation flips as we launch more. Ensure both work.
+    /// @dev Admin can move the platform-wide opening mcap; it applies to launches after the change only.
+    function test_launch_adminChangesOpeningMcapForNewLaunchesOnly() public {
+        (address t1, address p1) = doLaunch(creator, "OLD", 0);
+        setStartMcap(20_000e6);
+        (address t2, address p2) = doLaunch(creator, "NEW", 0);
+        assertApproxEqRel(spotMcap(t1, p1), 5_000e6, 0.03e18);
+        assertApproxEqRel(spotMcap(t2, p2), 20_000e6, 0.03e18);
+
+        // bounds are enforced
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(LaunchFactory.StartMcapOutOfRange.selector, 100e6));
+        factory.setLaunchParams(10_000e6, 20, 500, 550, 100e6);
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(LaunchFactory.StartMcapOutOfRange.selector, 100_000_000e6));
+        factory.setLaunchParams(10_000e6, 20, 500, 550, 100_000_000e6);
+    }
+
+    /// @dev Token addresses come from CREATE2 (salt = creator, count, prev blockhash), so orientation flips
+    ///      pseudo-randomly. Ensure both work and that the prediction helper matches the factory.
     function test_launch_bothOrientations() public {
         bool seen0;
         bool seen1;
         for (uint256 i; i < 40 && !(seen0 && seen1); ++i) {
-            bool isToken0 = nextTokenAddress() < address(usdc);
-            (address token, address pool) = doLaunch(creator, string.concat("T", vm.toString(i)), 8_000e6, 0);
+            string memory sym = string.concat("T", vm.toString(i));
+            address predicted = nextTokenAddress(creator, sym);
+            bool isToken0 = predicted < address(usdc);
+            (address token, address pool) = doLaunch(creator, sym, 0);
+            assertEq(token, predicted, "CREATE2 prediction");
             assertEq(token < address(usdc), isToken0);
-            assertApproxEqRel(spotMcap(token, pool), 8_000e6, 0.03e18);
+            assertApproxEqRel(spotMcap(token, pool), 5_000e6, 0.03e18);
             // buy works in either orientation
             vm.roll(block.number + 30);
             uint256 out = buy(buyer, token, 50e6);
@@ -95,7 +128,7 @@ contract LaunchTest is Base {
     // ------------------------------------------------------------ trading & price
 
     function test_trade_buyRaisesPriceSellLowers() public {
-        (address token, address pool) = doLaunch(creator, "FFF", 5_000e6, 0);
+        (address token, address pool) = doLaunch(creator, "FFF", 0);
         vm.roll(block.number + 30);
         uint256 m0 = spotMcap(token, pool);
         uint256 out = buy(buyer, token, 500e6);
@@ -110,7 +143,7 @@ contract LaunchTest is Base {
     // ------------------------------------------------------------ launch protection
 
     function test_protection_launchBlockOnlyCreator() public {
-        (address token,) = doLaunch(creator, "GGG", 5_000e6, 0);
+        (address token,) = doLaunch(creator, "GGG", 0);
         // same block: a stranger cannot buy
         vm.expectRevert();
         buy(buyer, token, 10e6);
@@ -120,7 +153,7 @@ contract LaunchTest is Base {
     }
 
     function test_protection_capsDuringWindowThenLifted() public {
-        (address token,) = doLaunch(creator, "HHH", 5_000e6, 0);
+        (address token,) = doLaunch(creator, "HHH", 0);
         vm.roll(block.number + 1);
         // 5.5% of supply at $5k mcap ≈ $275+ of USDC; buying $2,000 would exceed maxBuy
         vm.expectRevert();
@@ -140,8 +173,9 @@ contract LaunchTest is Base {
 
     // ------------------------------------------------------------ fees
 
-    function test_fees_distributeSplits75_25() public {
-        (address token,) = doLaunch(creator, "III", 5_000e6, 0);
+    /// @dev Creator and protocol receive USDC only; the token-side fee is sold into the pool first.
+    function test_fees_distributeSplits75_25_usdcOnly() public {
+        (address token,) = doLaunch(creator, "III", 0);
         vm.roll(block.number + 30);
         uint256 out = buy(buyer, token, 1_000e6); // 1% fee = 10 USDC accrues to the position
         sell(buyer, token, out / 2); // token-side fee accrues too
@@ -149,31 +183,66 @@ contract LaunchTest is Base {
         uint256 cU = usdc.balanceOf(creator);
         uint256 tU = usdc.balanceOf(address(treasury));
         uint256 cT = LaunchToken(token).balanceOf(creator);
+        uint256 lockerTokens = LaunchToken(token).balanceOf(address(locker));
 
-        (uint256 quoteCollected, uint256 tokenCollected) = locker.distribute(token);
-        assertApproxEqAbs(quoteCollected, 10e6, 2); // 1% of 1,000 USDC
-        assertGt(tokenCollected, 0);
+        (uint256 usdcCollected, uint256 usdcFromToken) = locker.distribute(token, 0);
+        assertApproxEqAbs(usdcCollected, 10e6, 2); // 1% of 1,000 USDC
+        assertGt(usdcFromToken, 0, "token-side fee was converted");
 
-        assertEq(usdc.balanceOf(creator) - cU, (quoteCollected * 7_500) / 10_000);
-        assertEq(usdc.balanceOf(address(treasury)) - tU, quoteCollected - (quoteCollected * 7_500) / 10_000);
-        assertEq(LaunchToken(token).balanceOf(creator) - cT, (tokenCollected * 7_500) / 10_000);
+        uint256 total = usdcCollected + usdcFromToken;
+        uint256 share = (total * 7_500) / 10_000;
+        assertEq(usdc.balanceOf(creator) - cU, share);
+        assertEq(usdc.balanceOf(address(treasury)) - tU, total - share);
 
-        // second distribute with nothing new collects zero and does not revert
-        (uint256 q2,) = locker.distribute(token);
+        // nobody received launch tokens, and none are stuck in the locker
+        assertEq(LaunchToken(token).balanceOf(creator), cT);
+        assertEq(LaunchToken(token).balanceOf(address(locker)), lockerTokens);
+        assertEq(locker.unconvertedTokenFees(token), 0);
+
+        // second distribute: no new USDC fees; the only thing left is the 1% pool fee our own conversion
+        // swap just generated (a tail ~1% of the previous conversion), and it must not revert
+        (uint256 q2, uint256 f2) = locker.distribute(token, 0);
         assertEq(q2, 0);
+        assertLt(f2, usdcFromToken / 50);
+    }
+
+    /// @dev If the token→USDC swap fails the slippage guard, the tokens are kept and the USDC payout still happens.
+    function test_fees_swapFailureDefersTokensButPaysUsdc() public {
+        (address token,) = doLaunch(creator, "JJ2", 0);
+        vm.roll(block.number + 30);
+        uint256 out = buy(buyer, token, 1_000e6);
+        sell(buyer, token, out / 2);
+
+        uint256 cU = usdc.balanceOf(creator);
+        // absurd minOut → swap reverts inside try/catch
+        vm.expectEmit(true, false, false, false);
+        emit FeeLocker.TokenFeesDeferred(token, 0);
+        (uint256 usdcCollected, uint256 usdcFromToken) = locker.distribute(token, type(uint256).max);
+        assertGt(usdcCollected, 0);
+        assertEq(usdcFromToken, 0);
+        assertGt(locker.unconvertedTokenFees(token), 0);
+        // USDC part was still paid 75/25
+        assertEq(usdc.balanceOf(creator) - cU, (usdcCollected * 7_500) / 10_000);
+
+        // next run with a sane guard converts the backlog
+        uint256 backlog = locker.unconvertedTokenFees(token);
+        (, uint256 f2) = locker.distribute(token, 0);
+        assertGt(f2, 0);
+        assertEq(locker.unconvertedTokenFees(token), 0);
+        assertGt(backlog, 0);
     }
 
     function test_fees_blocklistedCreatorParkedAsClaimable() public {
-        (address token,) = doLaunch(creator, "JJJ", 5_000e6, 0);
+        (address token,) = doLaunch(creator, "JJJ", 0);
         vm.roll(block.number + 30);
         buy(buyer, token, 1_000e6);
 
         usdc.setBlocked(creator, true);
         uint256 tU = usdc.balanceOf(address(treasury));
-        (uint256 q,) = locker.distribute(token); // must NOT revert
-        uint256 share = (q * 7_500) / 10_000;
+        (uint256 q, uint256 f) = locker.distribute(token, 0); // must NOT revert
+        uint256 share = ((q + f) * 7_500) / 10_000;
         assertEq(locker.claimable(creator, address(usdc)), share);
-        assertEq(usdc.balanceOf(address(treasury)) - tU, q - share, "protocol still paid");
+        assertEq(usdc.balanceOf(address(treasury)) - tU, (q + f) - share, "protocol still paid");
 
         // once unblocked, creator claims
         usdc.setBlocked(creator, false);
@@ -184,31 +253,129 @@ contract LaunchTest is Base {
         assertEq(locker.claimable(creator, address(usdc)), 0);
     }
 
-    function test_fees_payoutRotationAndCTO() public {
-        (address token,) = doLaunch(creator, "KKK", 5_000e6, 0);
+    // ------------------------------------------------------------ payout address / community takeover
+
+    function test_payout_creatorRotatesInstantly_strangerCannot() public {
+        (address token,) = doLaunch(creator, "KKK", 0);
         address newWallet = makeAddr("newWallet");
-        // creator moves own payout
         vm.prank(creator);
         locker.setPayout(token, newWallet);
-        // stranger cannot
+        (,,,,, address payout,,) = locker.locks(token);
+        assertEq(payout, newWallet);
+
         vm.prank(buyer);
-        vm.expectRevert();
+        vm.expectRevert(FeeLocker.NotCreator.selector);
         locker.setPayout(token, buyer);
-        // owner (multisig) can reassign — community takeover
-        address community = makeAddr("community");
+
+        // even the owner cannot use the instant path
         vm.prank(owner);
-        locker.setPayout(token, community);
+        vm.expectRevert(FeeLocker.NotCreator.selector);
+        locker.setPayout(token, owner);
 
         vm.roll(block.number + 30);
         buy(buyer, token, 1_000e6);
+        uint256 before = usdc.balanceOf(newWallet);
+        locker.distribute(token, 0);
+        assertGt(usdc.balanceOf(newWallet) - before, 0);
+    }
+
+    function test_payout_creatorCanPickFeeWalletAtLaunch() public {
+        address feeWallet = makeAddr("feeWallet");
+        LaunchFactory.LaunchParams memory p = launchParams("FEE", 0);
+        p.payout = feeWallet;
+        vm.prank(creator);
+        (address token,,) = factory.launch(p);
+
+        (,,,, address recCreator, address payout,,) = locker.locks(token);
+        assertEq(recCreator, creator, "deployer stays the creator of record");
+        assertEq(payout, feeWallet, "share goes to the chosen wallet");
+
+        // the fee wallet, not the deployer, now controls rotation
+        vm.prank(creator);
+        vm.expectRevert(FeeLocker.NotCreator.selector);
+        locker.setPayout(token, creator);
+
+        vm.roll(block.number + 30);
+        buy(buyer, token, 1_000e6);
+        uint256 before = usdc.balanceOf(feeWallet);
+        uint256 creatorBefore = usdc.balanceOf(creator);
+        locker.distribute(token, 0);
+        assertGt(usdc.balanceOf(feeWallet) - before, 0);
+        assertEq(usdc.balanceOf(creator), creatorBefore, "deployer receives nothing");
+    }
+
+    function test_payout_ownerTakeoverNeedsDelay() public {
+        (address token,) = doLaunch(creator, "CTO", 0);
+        address community = makeAddr("community");
+
+        vm.prank(buyer);
+        vm.expectRevert();
+        locker.proposePayout(token, community);
+
+        vm.prank(owner);
+        locker.proposePayout(token, community);
+        (address proposed, uint64 eta) = locker.pendingPayout(token);
+        assertEq(proposed, community);
+        assertEq(eta, uint64(block.timestamp + locker.CTO_DELAY()));
+
+        // too early
+        vm.expectRevert(abi.encodeWithSelector(FeeLocker.DelayNotElapsed.selector, eta));
+        locker.executePayout(token);
+        (,,,,, address payout,,) = locker.locks(token);
+        assertEq(payout, creator, "unchanged during delay");
+
+        // after the delay anyone can execute
+        vm.warp(block.timestamp + 48 hours);
+        vm.prank(buyer);
+        locker.executePayout(token);
+        (,,,,, payout,,) = locker.locks(token);
+        assertEq(payout, community);
+        (proposed,) = locker.pendingPayout(token);
+        assertEq(proposed, address(0));
+
+        // fees now flow to the community wallet
+        vm.roll(block.number + 30);
+        buy(buyer, token, 1_000e6);
         uint256 before = usdc.balanceOf(community);
-        locker.distribute(token);
+        locker.distribute(token, 0);
         assertGt(usdc.balanceOf(community) - before, 0);
     }
 
+    function test_payout_creatorCanVetoTakeover() public {
+        (address token,) = doLaunch(creator, "VETO", 0);
+        address community = makeAddr("community");
+        vm.prank(owner);
+        locker.proposePayout(token, community);
+
+        // explicit cancel by the creator
+        vm.prank(creator);
+        locker.cancelPayoutProposal(token);
+        (address proposed,) = locker.pendingPayout(token);
+        assertEq(proposed, address(0));
+        vm.warp(block.timestamp + 48 hours);
+        vm.expectRevert(FeeLocker.NoProposal.selector);
+        locker.executePayout(token);
+
+        // rotating the payout also clears a pending proposal
+        vm.prank(owner);
+        locker.proposePayout(token, community);
+        address mine = makeAddr("mine");
+        vm.prank(creator);
+        locker.setPayout(token, mine);
+        (proposed,) = locker.pendingPayout(token);
+        assertEq(proposed, address(0));
+
+        // a stranger cannot cancel
+        vm.prank(owner);
+        locker.proposePayout(token, community);
+        vm.prank(buyer);
+        vm.expectRevert(FeeLocker.NotCreatorOrOwner.selector);
+        locker.cancelPayoutProposal(token);
+    }
+
     function test_locker_positionCanNeverLeave() public {
-        (address token,) = doLaunch(creator, "LLL", 5_000e6, 0);
-        (uint256 tokenId,,,,,,) = locker.locks(token);
+        (address token,) = doLaunch(creator, "LLL", 0);
+        (uint256 tokenId,,,,,,,) = locker.locks(token);
         // no function exists to transfer it; even the owner cannot move it via the NFT contract
         vm.prank(owner);
         vm.expectRevert();
@@ -220,8 +387,8 @@ contract LaunchTest is Base {
 
     function test_graduation_flagAndEvent() public {
         vm.prank(owner);
-        factory.setLaunchParams(500e6, 20, 500, 550, 322_000, 421_500); // low threshold for the test
-        (address token, address pool) = doLaunch(creator, "MMM", 5_000e6, 0);
+        factory.setLaunchParams(500e6, 20, 500, 550, 5_000e6); // low threshold for the test
+        (address token, address pool) = doLaunch(creator, "MMM", 0);
 
         (uint256 paired, uint256 threshold, bool graduated) = factory.graduationStatus(token);
         assertEq(threshold, 500e6);

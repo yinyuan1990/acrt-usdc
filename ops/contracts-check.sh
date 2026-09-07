@@ -6,6 +6,7 @@ cd /opt/arclaunch/contracts
 forge build 2>&1 | grep -E 'Error|error|Compiler run|finished' || true
 forge test 2>&1 | tail -n 3
 mkdir -p audit
+rm -f audit/slither.json   # slither refuses to overwrite an existing --json target (stale report otherwise)
 slither . --filter-paths 'lib/|test/|script/|vendor/' --exclude-informational --exclude-optimization --json audit/slither.json >/dev/null 2>&1 || true
 python3 - <<'PY'
 import json, collections

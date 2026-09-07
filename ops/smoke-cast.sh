@@ -17,25 +17,17 @@ bal() { $CALL "$USDC" 'balanceOf(address)(uint256)' "$1" | awk '{print $1}'; }
 echo "me: $DEPLOYER  usdc: $(bal "$DEPLOYER")"
 
 if [ "$STEP" = "launch" ]; then
-  MCAP=${MCAP_USDC:-5000000000}; FIRST=${FIRST_BUY:-3000000}
-  NONCE=$($CALL --rpc-url "$RPC" 2>/dev/null; cast nonce --rpc-url "$RPC" "$FACTORY")
-  PRED=$(cast compute-address --nonce "$NONCE" "$FACTORY" | awk '{print $NF}')
-  IS0=$(python3 -c "print(int('$PRED',16) < int('$USDC',16))")
-  SQRTP=$(python3 - "$MCAP" "$IS0" <<'PY'
-import sys, math
-M=int(sys.argv[1]); is0=sys.argv[2]=='True'; SCALE=10**27
-def isqrt(n): return math.isqrt(n)
-s = (isqrt((M<<128)//SCALE)<<32) if is0 else (isqrt((SCALE<<128)//M)<<32)
-print(s)
-PY
-)
-  echo "predicted token: $PRED  isToken0=$IS0  sqrtPriceX96=$SQRTP"
+  FIRST=${FIRST_BUY:-3000000}
+  echo "platform start mcap (usdc6): $($CALL "$FACTORY" 'startMcapUsdc()(uint256)' | awk '{print $1}')  (token address is CREATE2 w/ prev blockhash — not predictable ahead of time)"
   FEE=$($CALL "$FACTORY" 'quoteCreationFee(address)(uint256)' "$DEPLOYER" | awk '{print $1}')
   NEED=$((FEE + FIRST))
   $SEND "$USDC" 'approve(address,uint256)' "$FACTORY" "$NEED" | python3 -c 'import sys,json; r=json.load(sys.stdin); print("approve", r["status"], r["transactionHash"])'
   NAME="${NAME:-Arc Cat}"; SYMBOL="${SYMBOL:-ACAT}"
-  ARGS="(\"$NAME\",\"$SYMBOL\",\"https://launch.hzmrbq.com/logo/acat.png\",\"First cat on Arc. Smoke test token.\",(\"https://launch.hzmrbq.com\",\"https://x.com/arclaunch\",\"\"),$SQRTP,$FIRST,0)"
-  $SEND "$FACTORY" 'launch((string,string,string,string,(string,string,string),uint160,uint256,uint256))' "$ARGS" \
+  # tax mode via env: BUY_TAX / SELL_TAX in bps, MARKETING / TEAM wallets (0 = deployer), MARKETING_BPS share
+  ZERO=0x0000000000000000000000000000000000000000
+  BUY_TAX=${BUY_TAX:-0}; SELL_TAX=${SELL_TAX:-0}; MARKETING=${MARKETING:-$ZERO}; TEAM=${TEAM:-$ZERO}; MARKETING_BPS=${MARKETING_BPS:-5000}
+  ARGS="(\"$NAME\",\"$SYMBOL\",\"https://arclaunch.top/brand/logo-navy.png\",\"First cat on Arc. Smoke test token.\",(\"https://arclaunch.top\",\"https://x.com/arclaunch_\",\"https://t.me/ArcLaunchCommunity\",\"\",\"\"),$ZERO,$BUY_TAX,$SELL_TAX,$MARKETING,$TEAM,$MARKETING_BPS,$FIRST,0)"
+  $SEND "$FACTORY" 'launch((string,string,string,string,(string,string,string,string,string),address,uint16,uint16,address,address,uint16,uint256,uint256))' "$ARGS" \
     | python3 -c 'import sys,json; r=json.load(sys.stdin); print("launch", r["status"], r["transactionHash"], "gas", int(r["gasUsed"],16))'
   N=$($CALL "$FACTORY" 'totalLaunches()(uint256)' | awk '{print $1}')
   TOKEN=$($CALL "$FACTORY" 'allTokens(uint256)(address)' $((N-1)))
@@ -66,9 +58,11 @@ elif [ "$STEP" = "fees" ]; then
   : "${TOKEN:?TOKEN required}"
   echo "pendingOwed (token, usdc): $($CALL "$LOCKER" 'pendingOwed(address)(uint256,uint256)' "$TOKEN" | tr '\n' ' ')"
   ME0=$(bal "$DEPLOYER"); TR0=$(bal "$TREASURY")
-  $SEND "$LOCKER" 'distribute(address)(uint256,uint256)' "$TOKEN" | python3 -c 'import sys,json; r=json.load(sys.stdin); print("distribute", r["status"], r["transactionHash"], "logs", len(r["logs"]))'
+  # minUsdcOut=0 is fine for a manual smoke run; the keeper passes a quote-based guard
+  $SEND "$LOCKER" 'distribute(address,uint256)(uint256,uint256)' "$TOKEN" 0 | python3 -c 'import sys,json; r=json.load(sys.stdin); print("distribute", r["status"], r["transactionHash"], "logs", len(r["logs"]))'
   echo "creator  +usdc: $(( $(bal "$DEPLOYER") - ME0 ))"
   echo "treasury +usdc: $(( $(bal "$TREASURY") - TR0 ))"
   echo "claimable(creator, usdc): $($CALL "$LOCKER" 'claimable(address,address)(uint256)' "$DEPLOYER" "$USDC")"
+  echo "unconverted token fees:   $($CALL "$LOCKER" 'unconvertedTokenFees(address)(uint256)' "$TOKEN")"
 fi
 echo "usdc left: $(bal "$DEPLOYER")"
